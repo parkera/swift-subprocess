@@ -364,67 +364,37 @@ public func runDetached(
         let processOutput = DiscardedOutput()
         let processError = DiscardedOutput()
         
-        let inputRead = try processInput.createReadFileDescriptor()
-        let inputWrite = try processInput.createWriteFileDescriptor()
-        let outputRead = try processOutput.createReadFileDescriptor()
-        let outputWrite = try processOutput.createWriteFileDescriptor()
-        let errorRead = try processError.createReadFileDescriptor()
-        let errorWrite = try processError.createWriteFileDescriptor()
-
-        return try configuration.spawn(
-            inputRead: inputRead,
-            inputWrite: inputWrite,
+        return try configuration.detachedSpawn(
+            inputPipe: PipeCreator(processInput),
             output: processOutput,
-            outputRead: outputRead,
-            outputWrite: outputWrite,
+            outputPipe: PipeCreator(processOutput),
             error: processError,
-            errorRead: errorRead,
-            errorWrite: errorWrite
-        ).processIdentifier
+            errorPipe: PipeCreator(processError)
+        )
     case (.none, .none, .some(let errorFd)):
         let processInput = NoInput()
         let processOutput = DiscardedOutput()
         let processError = FileDescriptorOutput(fileDescriptor: errorFd, closeAfterSpawningProcess: false)
         
-        let inputRead = try processInput.createReadFileDescriptor()
-        let inputWrite = try processInput.createWriteFileDescriptor()
-        let outputRead = try processOutput.createReadFileDescriptor()
-        let outputWrite = try processOutput.createWriteFileDescriptor()
-        let errorRead = try processError.createReadFileDescriptor()
-        let errorWrite = try processError.createWriteFileDescriptor()
-
-        return try configuration.spawn(
-            inputRead: inputRead,
-            inputWrite: inputWrite,
+        return try configuration.detachedSpawn(
+            inputPipe: PipeCreator(processInput),
             output: processOutput,
-            outputRead: outputRead,
-            outputWrite: outputWrite,
+            outputPipe: PipeCreator(processOutput),
             error: processError,
-            errorRead: errorRead,
-            errorWrite: errorWrite
-        ).processIdentifier
+            errorPipe: PipeCreator(processError)
+        )
     case (.none, .some(let outputFd), .none):
         let processInput = NoInput()
         let processOutput = FileDescriptorOutput(fileDescriptor: outputFd, closeAfterSpawningProcess: false)
         let processError = DiscardedOutput()
         
-        let inputRead = try processInput.createReadFileDescriptor()
-        let inputWrite = try processInput.createWriteFileDescriptor()
-        let outputRead = try processOutput.createReadFileDescriptor()
-        let outputWrite = try processOutput.createWriteFileDescriptor()
-        let errorRead = try processError.createReadFileDescriptor()
-        let errorWrite = try processError.createWriteFileDescriptor()
-
-        return try configuration.spawn(
-            inputRead: inputRead,
-            inputWrite: inputWrite,
+        return try configuration.detachedSpawn(
+            inputPipe: PipeCreator(processInput),
             output: processOutput,
-            outputRead: outputRead,
-            outputWrite: outputWrite,
+            outputPipe: PipeCreator(processOutput),
             error: processError,
-            errorRead: errorRead,
-            errorWrite: errorWrite
-        ).processIdentifier
+            errorPipe: PipeCreator(processError)
+        )
     case (.none, .some(let outputFd), .some(let errorFd)):
         let processInput = NoInput()
         let processOutput = FileDescriptorOutput(
@@ -436,23 +406,13 @@ public func runDetached(
             closeAfterSpawningProcess: false
         )
         
-        let inputRead = try processInput.createReadFileDescriptor()
-        let inputWrite = try processInput.createWriteFileDescriptor()
-        let outputRead = try processOutput.createReadFileDescriptor()
-        let outputWrite = try processOutput.createWriteFileDescriptor()
-        let errorRead = try processError.createReadFileDescriptor()
-        let errorWrite = try processError.createWriteFileDescriptor()
-
-        return try configuration.spawn(
-            inputRead: inputRead,
-            inputWrite: inputWrite,
+        return try configuration.detachedSpawn(
+            inputPipe: PipeCreator(processInput),
             output: processOutput,
-            outputRead: outputRead,
-            outputWrite: outputWrite,
+            outputPipe: PipeCreator(processOutput),
             error: processError,
-            errorRead: errorRead,
-            errorWrite: errorWrite
-        ).processIdentifier
+            errorPipe: PipeCreator(processError)
+        )
     case (.some(let inputFd), .none, .none):
         let processInput = FileDescriptorInput(
             fileDescriptor: inputFd,
@@ -461,23 +421,13 @@ public func runDetached(
         let processOutput = DiscardedOutput()
         let processError = DiscardedOutput()
         
-        let inputRead = try processInput.createReadFileDescriptor()
-        let inputWrite = try processInput.createWriteFileDescriptor()
-        let outputRead = try processOutput.createReadFileDescriptor()
-        let outputWrite = try processOutput.createWriteFileDescriptor()
-        let errorRead = try processError.createReadFileDescriptor()
-        let errorWrite = try processError.createWriteFileDescriptor()
-
-        return try configuration.spawn(
-            inputRead: inputRead,
-            inputWrite: inputWrite,
+        return try configuration.detachedSpawn(
+            inputPipe: PipeCreator(processInput),
             output: processOutput,
-            outputRead: outputRead,
-            outputWrite: outputWrite,
+            outputPipe: PipeCreator(processOutput),
             error: processError,
-            errorRead: errorRead,
-            errorWrite: errorWrite
-        ).processIdentifier
+            errorPipe: PipeCreator(processError)
+        )
     case (.some(let inputFd), .none, .some(let errorFd)):
         let processInput = FileDescriptorInput(
             fileDescriptor: inputFd,
@@ -489,23 +439,13 @@ public func runDetached(
             closeAfterSpawningProcess: false
         )
         
-        let inputRead = try processInput.createReadFileDescriptor()
-        let inputWrite = try processInput.createWriteFileDescriptor()
-        let outputRead = try processOutput.createReadFileDescriptor()
-        let outputWrite = try processOutput.createWriteFileDescriptor()
-        let errorRead = try processError.createReadFileDescriptor()
-        let errorWrite = try processError.createWriteFileDescriptor()
-
-        return try configuration.spawn(
-            inputRead: inputRead,
-            inputWrite: inputWrite,
+        return try configuration.detachedSpawn(
+            inputPipe: PipeCreator(processInput),
             output: processOutput,
-            outputRead: outputRead,
-            outputWrite: outputWrite,
+            outputPipe: PipeCreator(processOutput),
             error: processError,
-            errorRead: errorRead,
-            errorWrite: errorWrite
-        ).processIdentifier
+            errorPipe: PipeCreator(processError)
+        )
     case (.some(let inputFd), .some(let outputFd), .none):
         let processInput = FileDescriptorInput(
             fileDescriptor: inputFd,
@@ -517,23 +457,13 @@ public func runDetached(
         )
         let processError = DiscardedOutput()
         
-        let inputRead = try processInput.createReadFileDescriptor()
-        let inputWrite = try processInput.createWriteFileDescriptor()
-        let outputRead = try processOutput.createReadFileDescriptor()
-        let outputWrite = try processOutput.createWriteFileDescriptor()
-        let errorRead = try processError.createReadFileDescriptor()
-        let errorWrite = try processError.createWriteFileDescriptor()
-
-        return try configuration.spawn(
-            inputRead: inputRead,
-            inputWrite: inputWrite,
+        return try configuration.detachedSpawn(
+            inputPipe: PipeCreator(processInput),
             output: processOutput,
-            outputRead: outputRead,
-            outputWrite: outputWrite,
+            outputPipe: PipeCreator(processOutput),
             error: processError,
-            errorRead: errorRead,
-            errorWrite: errorWrite
-        ).processIdentifier
+            errorPipe: PipeCreator(processError)
+        )
     case (.some(let inputFd), .some(let outputFd), .some(let errorFd)):
         let processInput = FileDescriptorInput(
             fileDescriptor: inputFd,
@@ -548,22 +478,12 @@ public func runDetached(
             closeAfterSpawningProcess: false
         )
         
-        let inputRead = try processInput.createReadFileDescriptor()
-        let inputWrite = try processInput.createWriteFileDescriptor()
-        let outputRead = try processOutput.createReadFileDescriptor()
-        let outputWrite = try processOutput.createWriteFileDescriptor()
-        let errorRead = try processError.createReadFileDescriptor()
-        let errorWrite = try processError.createWriteFileDescriptor()
-
-        return try configuration.spawn(
-            inputRead: inputRead,
-            inputWrite: inputWrite,
+        return try configuration.detachedSpawn(
+            inputPipe: PipeCreator(processInput),
             output: processOutput,
-            outputRead: outputRead,
-            outputWrite: outputWrite,
+            outputPipe: PipeCreator(processOutput),
             error: processError,
-            errorRead: errorRead,
-            errorWrite: errorWrite
-        ).processIdentifier
+            errorPipe: PipeCreator(processError)
+        )
     }
 }

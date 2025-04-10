@@ -156,6 +156,36 @@ extension Configuration {
     #if SubprocessSpan
     @available(SubprocessSpan, *)
     #endif
+    internal func detachedSpawn<
+        Output: OutputProtocol,
+        Error: OutputProtocol
+    >(
+        inputPipe: consuming PipeCreator,
+        output: Output,
+        outputPipe: consuming PipeCreator,
+        error: Error,
+        errorPipe: consuming PipeCreator
+    ) throws -> ProcessIdentifier {
+        let inputRead = inputPipe.read
+        let inputWrite = inputPipe.write
+        let outputRead = outputPipe.read
+        let outputWrite = outputPipe.write
+        let errorRead = errorPipe.read
+        let errorWrite = errorPipe.write
+        return try self.spawn(
+            inputRead: inputRead,
+            inputWrite: inputWrite,
+            output: output,
+            outputRead: outputRead,
+            outputWrite: outputWrite,
+            error: error,
+            errorRead: errorRead,
+            errorWrite: errorWrite).processIdentifier
+    }
+    
+    #if SubprocessSpan
+    @available(SubprocessSpan, *)
+    #endif
     internal func spawn<
         Output: OutputProtocol,
         Error: OutputProtocol
@@ -227,7 +257,6 @@ extension Configuration {
             try inputRead._borrowingMap { inputRead in
                 let result = posix_spawn_file_actions_adddup2(&fileActions, inputRead.platformDescriptor.rawValue, 0)
                 guard result == 0 else {
-                    //try self.cleanupPreSpawn(inputRead: inputRead, inputWrite: inputWrite.take(), outputRead: outputRead.take(), outputWrite: outputWrite.take(), errorRead: errorRead.take(), errorWrite: errorWrite.take())
                     throw SubprocessError(
                         code: .init(.spawnFailed),
                         underlyingError: .init(rawValue: result)
@@ -238,7 +267,6 @@ extension Configuration {
                 // Close parent side
                 let result = posix_spawn_file_actions_addclose(&fileActions, inputWrite.platformDescriptor.rawValue)
                 guard result == 0 else {
-                    //try self.cleanupPreSpawn(inputRead: inputRead.take(), inputWrite: inputWrite, outputRead: outputRead.take(), outputWrite: outputWrite.take(), errorRead: errorRead.take(), errorWrite: errorWrite.take())
                     throw SubprocessError(
                         code: .init(.spawnFailed),
                         underlyingError: .init(rawValue: result)
@@ -249,7 +277,6 @@ extension Configuration {
             try outputWrite._borrowingMap { outputWrite in
                 let result = posix_spawn_file_actions_adddup2(&fileActions, outputWrite.platformDescriptor.rawValue, 1)
                 guard result == 0 else {
-                    //try self.cleanupPreSpawn(inputRead: inputRead.take(), inputWrite: inputWrite.take(), outputRead: outputRead.take(), outputWrite: outputWrite, errorRead: errorRead.take(), errorWrite: errorWrite.take())
                     throw SubprocessError(
                         code: .init(.spawnFailed),
                         underlyingError: .init(rawValue: result)
@@ -260,7 +287,6 @@ extension Configuration {
                 // Close parent side
                 let result = posix_spawn_file_actions_addclose(&fileActions, outputRead.platformDescriptor.rawValue)
                 guard result == 0 else {
-                    //try self.cleanupPreSpawn(inputRead: inputRead.take(), inputWrite: inputWrite.take(), outputRead: outputRead, outputWrite: outputWrite.take(), errorRead: errorRead.take(), errorWrite: errorWrite.take())
                     throw SubprocessError(
                         code: .init(.spawnFailed),
                         underlyingError: .init(rawValue: result)
@@ -271,7 +297,6 @@ extension Configuration {
             try errorWrite._borrowingMap { errorWrite in
                 let result = posix_spawn_file_actions_adddup2(&fileActions, errorWrite.platformDescriptor.rawValue, 2)
                 guard result == 0 else {
-                    //try self.cleanupPreSpawn(inputRead: inputRead.take(), inputWrite: inputWrite.take(), outputRead: outputRead.take(), outputWrite: outputWrite.take(), errorRead: errorRead.take(), errorWrite: errorWrite)
                     throw SubprocessError(
                         code: .init(.spawnFailed),
                         underlyingError: .init(rawValue: result)
@@ -282,7 +307,6 @@ extension Configuration {
                 // Close parent side
                 let result = posix_spawn_file_actions_addclose(&fileActions, errorRead.platformDescriptor.rawValue)
                 guard result == 0 else {
-                    //try self.cleanupPreSpawn(inputRead: inputRead.take(), inputWrite: inputWrite.take(), outputRead: outputRead.take(), outputWrite: outputWrite.take(), errorRead: errorRead, errorWrite: errorWrite.take())
                     throw SubprocessError(
                         code: .init(.spawnFailed),
                         underlyingError: .init(rawValue: result)
@@ -325,7 +349,6 @@ extension Configuration {
             
             // Error handling
             if chdirError != 0 || spawnAttributeError != 0 {
-                //try self.cleanupPreSpawn(inputRead: inputRead.take(), inputWrite: inputWrite.take(), outputRead: outputRead.take(), outputWrite: outputWrite.take(), errorRead: errorRead.take(), errorWrite: errorWrite.take())
                 if spawnAttributeError != 0 {
                     throw SubprocessError(
                         code: .init(.spawnFailed),
@@ -370,7 +393,6 @@ extension Configuration {
                     continue
                 }
                 // Throw all other errors
-                //try self.cleanupPreSpawn(inputRead: inputRead.take(), inputWrite: inputWrite.take(), outputRead: outputRead.take(), outputWrite: outputWrite.take(), errorRead: errorRead.take(), errorWrite: errorWrite.take())
                 throw SubprocessError(
                     code: .init(.spawnFailed),
                     underlyingError: .init(rawValue: spawnError)
@@ -408,7 +430,6 @@ extension Configuration {
         // provide which one is not valid, here we make a best effort guess
         // by checking whether the working directory is valid. This technically
         // still causes TOUTOC issue, but it's the best we can do for error recovery.
-        //try self.cleanupPreSpawn(inputRead: inputRead.take(), inputWrite: inputWrite.take(), outputRead: outputRead.take(), outputWrite: outputWrite.take(), errorRead: errorRead.take(), errorWrite: errorWrite.take())
         let workingDirectory = self.workingDirectory.string
         guard Configuration.pathAccessible(workingDirectory, mode: F_OK) else {
             throw SubprocessError(

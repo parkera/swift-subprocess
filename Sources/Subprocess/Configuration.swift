@@ -820,107 +820,6 @@ internal enum StringOrRawBytes: Sendable, Hashable {
     }
 }
 
-/// A simple wrapper on `FileDescriptor` plus a flag indicating
-/// whether it should be closed automactially when done.
-internal struct TrackedFileDescriptor: ~Copyable {
-    internal let closeWhenDone: Bool
-    internal let wrapped: FileDescriptor
-
-    internal init(
-        _ wrapped: FileDescriptor,
-        closeWhenDone: Bool
-    ) {
-        self.wrapped = wrapped
-        self.closeWhenDone = closeWhenDone
-    }
-
-    consuming internal func safelyClose() throws {
-        guard self.closeWhenDone else {
-            return
-        }
-
-        do {
-            try self.wrapped.close()
-        } catch {
-            guard let errno: Errno = error as? Errno else {
-                throw error
-            }
-            if errno != .badFileDescriptor {
-                throw errno
-            }
-        }
-    }
-    
-    deinit {
-        if closeWhenDone {
-            try? self.wrapped.close()
-        }
-    }
-
-    internal var platformDescriptor: PlatformFileDescriptor {
-        return wrapped.platformDescriptor
-    }
-}
-
-internal struct CreatedPipe: ~Copyable {
-    private var _readFileDescriptor: TrackedFileDescriptor?
-    private var _writeFileDescriptor: TrackedFileDescriptor?
-    
-//    var readFileDescriptor: TrackedFileDescriptor? {
-//        mutating get {
-//            let returnValue = _readFileDescriptor
-//            _readFileDescriptor = nil
-//            return returnValue
-//        }
-//    }
-//
-//    var writeFileDescriptor: TrackedFileDescriptor? {
-//        mutating get {
-//            let returnValue = _writeFileDescriptor
-//            _writeFileDescriptor = nil
-//            return returnValue
-//        }
-//    }
-
-    internal init(
-        readFileDescriptor: consuming TrackedFileDescriptor?,
-        writeFileDescriptor: consuming TrackedFileDescriptor?
-    ) {
-        _readFileDescriptor = readFileDescriptor
-        _writeFileDescriptor = writeFileDescriptor
-    }
-    
-//    internal init(closeWhenDone: Bool) throws {
-//        let pipe = try FileDescriptor.pipe()
-//
-//        _readFileDescriptor = .init(
-//            pipe.readEnd.rawValue,
-//            closeWhenDone: closeWhenDone
-//        )
-//        _writeFileDescriptor = .init(
-//            pipe.writeEnd.rawValue,
-//            closeWhenDone: closeWhenDone
-//        )
-//    }
-    
-//    mutating func close() throws {
-//        try _readFileDescriptor?.safelyClose()
-//        try _writeFileDescriptor?.safelyClose()
-//        _readFileDescriptor = nil
-//        _writeFileDescriptor = nil
-//    }
-//    
-//    mutating func closeRead() throws {
-//        try _readFileDescriptor?.safelyClose()
-//        _readFileDescriptor = nil
-//    }
-//
-//    mutating func closeWrite() throws {
-//        try _writeFileDescriptor?.safelyClose()
-//        _writeFileDescriptor = nil
-//    }
-}
-
 extension FilePath {
     static var currentWorkingDirectory: Self {
         let path = getcwd(nil, 0)!
@@ -979,6 +878,7 @@ internal struct PipeCreator : ~Copyable {
     let read: TrackedFileDescriptor?
     let write: TrackedFileDescriptor?
     
+    /// A pipe, Customized for the `NoInput` type.
     init(_ i: NoInput) throws {
         // work around "Conditional initialization or destruction of noncopyable types is not supported"
         let r: TrackedFileDescriptor?
@@ -991,8 +891,8 @@ internal struct PipeCreator : ~Copyable {
         write = w
     }
     
+    /// A pipe, Customized for the `FileDescriptorInput` type.
     init(_ i: FileDescriptorInput) throws {
-        // work around "Conditional initialization or destruction of noncopyable types is not supported"
         let r: TrackedFileDescriptor?
         let w: TrackedFileDescriptor?
         
@@ -1003,6 +903,37 @@ internal struct PipeCreator : ~Copyable {
         write = w
     }
     
+    #if SubprocessSpan
+    @available(SubprocessSpan, *)
+    #endif
+    /// A pipe, Customized for the `DiscardedOutput` type.
+    init(_ i: FileDescriptorOutput) throws {
+        let r: TrackedFileDescriptor?
+        let w: TrackedFileDescriptor?
+        
+        r = try i.createReadFileDescriptor()
+        w = try i.createWriteFileDescriptor()
+        
+        read = r
+        write = w
+    }
+
+    #if SubprocessSpan
+    @available(SubprocessSpan, *)
+    #endif
+    /// A pipe, Customized for the `DiscardedOutput` type.
+    init(_ i: DiscardedOutput) throws {
+        let r: TrackedFileDescriptor?
+        let w: TrackedFileDescriptor?
+        
+        r = try i.createReadFileDescriptor()
+        w = try i.createWriteFileDescriptor()
+        
+        read = r
+        write = w
+    }
+    
+    /// A pipe for any other input type.
     init<I: InputProtocol>(_ i: I) throws {
         let pipe = try FileDescriptor.ssp_pipe()
         read = TrackedFileDescriptor(pipe.readEnd, closeWhenDone: true)
@@ -1012,6 +943,7 @@ internal struct PipeCreator : ~Copyable {
     #if SubprocessSpan
     @available(SubprocessSpan, *)
     #endif
+    /// A pipe for any other output type.
     init<I: OutputProtocol>(_ i: I) throws {
         let pipe = try FileDescriptor.ssp_pipe()
         read = TrackedFileDescriptor(pipe.readEnd, closeWhenDone: true)

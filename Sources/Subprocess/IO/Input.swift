@@ -192,18 +192,6 @@ extension InputProtocol {
     }
 }
 
-//extension InputProtocol {
-//    internal func createPipe() throws -> CreatedPipe {
-//        if let noInput = self as? NoInput {
-//            return try noInput.createPipe()
-//        } else if let fdInput = self as? FileDescriptorInput {
-//            return try fdInput.createPipe()
-//        }
-//        // Base implementation
-//        return try CreatedPipe(closeWhenDone: true)
-//    }
-//}
-
 // MARK: - StandardInputWriter
 
 /// A writer that writes to the standard input of the subprocess.

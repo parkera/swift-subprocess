@@ -18,35 +18,38 @@
 #if SubprocessSpan
 @available(SubprocessSpan, *)
 #endif
-internal struct AsyncBufferSequence: AsyncSequence, Sendable /*, ~Copyable*/ {
+internal struct AsyncBufferSequence: AsyncSequence, Sendable {
     internal typealias Failure = any Swift.Error
 
     internal typealias Element = SequenceOutput.Buffer
 
     @_nonSendable
-    internal struct Iterator: AsyncIteratorProtocol /*, ~Copyable */ {
+    internal struct Iterator: AsyncIteratorProtocol {
         internal typealias Element = SequenceOutput.Buffer
 
         private let fileDescriptor: PlatformFileDescriptor
         private var buffer: [UInt8]
         private var currentPosition: Int
         private var finished: Bool
+        private var closeWhenDone: Bool
 
-        internal init(fileDescriptor: PlatformFileDescriptor) {
+        internal init(fileDescriptor: PlatformFileDescriptor, closeWhenDone: Bool) {
             self.fileDescriptor = fileDescriptor
             self.buffer = []
             self.currentPosition = 0
             self.finished = false
+            self.closeWhenDone = closeWhenDone
         }
 
         internal mutating func next() async throws -> SequenceOutput.Buffer? {
-            let data = try await self.fileDescriptor.platformDescriptor.readChunk(
+            let data = try await self.fileDescriptor.readChunk(
                 upToLength: readBufferSize
             )
             if data == nil {
                 // We finished reading. Close the file descriptor now
-                //close(fileDescriptor.rawValue)
-                //try self.fileDescriptor.safelyClose()
+                if closeWhenDone {
+                    try? fileDescriptor.close()
+                }
                 return nil
             }
             return data
@@ -54,13 +57,15 @@ internal struct AsyncBufferSequence: AsyncSequence, Sendable /*, ~Copyable*/ {
     }
 
     private let fileDescriptor: PlatformFileDescriptor
+    private let closeWhenDone: Bool
 
     init(fileDescriptor: consuming TrackedFileDescriptor) {
-        self.fileDescriptor = fileDescriptor.platformDescriptor
+        // Maybe someday the sequence itself could be non-copyable, but we can't do it yet. Still, we consume the TrackedFileDescriptor to ensure it is properly closed.
+        (self.fileDescriptor, closeWhenDone) = fileDescriptor.extractPlatformDescriptor()
     }
 
-    public func makeAsyncIterator() -> Iterator {
-        return Iterator(fileDescriptor: self.fileDescriptor)
+    internal func makeAsyncIterator() -> Iterator {
+        return Iterator(fileDescriptor: fileDescriptor, closeWhenDone: closeWhenDone)
     }
 }
 
