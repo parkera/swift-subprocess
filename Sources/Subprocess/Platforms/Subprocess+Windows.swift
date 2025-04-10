@@ -495,12 +495,16 @@ extension Execution {
     /// Terminate the current subprocess with the given exit code
     /// - Parameter exitCode: The exit code to use for the subprocess.
     public func terminate(withExitCode exitCode: DWORD) throws {
+        try Self.terminate(processIdentifier: processIdentifier, withExitCode: exitCode)
+    }
+    
+    static public func terminate(processIdentifier: ProcessIdentifier, withExitCode exitCode: DWORD) throws {
         guard
             let processHandle = OpenProcess(
                 // PROCESS_ALL_ACCESS
                 DWORD(STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFFF),
                 false,
-                self.processIdentifier.value
+                processIdentifier.value
             )
         else {
             throw SubprocessError(

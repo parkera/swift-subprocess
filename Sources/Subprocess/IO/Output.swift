@@ -61,22 +61,20 @@ extension OutputProtocol {
 public struct DiscardedOutput: OutputProtocol {
     public typealias OutputType = Void
 
-    internal func createPipe() throws -> CreatedPipe {
+    internal func createReadFileDescriptor() throws -> TrackedFileDescriptor? {
         #if os(Windows)
         // On Windows, instead of binding to dev null,
         // we don't set the input handle in the `STARTUPINFOW`
         // to signal no output
-        return CreatedPipe(
-            readFileDescriptor: nil,
-            writeFileDescriptor: nil
-        )
+        return nil
         #else
         let devnull: FileDescriptor = try .openDevNull(withAcessMode: .readOnly)
-        return CreatedPipe(
-            readFileDescriptor: .init(devnull, closeWhenDone: true),
-            writeFileDescriptor: nil
-        )
+        return TrackedFileDescriptor(devnull, closeWhenDone: true)
         #endif
+    }
+    
+    internal func createWriteFileDescriptor() throws -> TrackedFileDescriptor? {
+        nil
     }
 
     internal init() {}
@@ -96,13 +94,14 @@ public struct FileDescriptorOutput: OutputProtocol {
     private let closeAfterSpawningProcess: Bool
     private let fileDescriptor: FileDescriptor
 
-    internal func createPipe() throws -> CreatedPipe {
-        return CreatedPipe(
-            readFileDescriptor: nil,
-            writeFileDescriptor: .init(
-                self.fileDescriptor,
-                closeWhenDone: self.closeAfterSpawningProcess
-            )
+    internal func createReadFileDescriptor() throws -> TrackedFileDescriptor? {
+        nil
+    }
+    
+    internal func createWriteFileDescriptor() throws -> TrackedFileDescriptor? {
+        TrackedFileDescriptor(
+            fileDescriptor,
+            closeWhenDone: closeAfterSpawningProcess
         )
     }
 
@@ -160,13 +159,9 @@ public struct BytesOutput: OutputProtocol {
     public typealias OutputType = [UInt8]
     public let maxSize: Int
 
-    internal func captureOutput(from fileDescriptor: TrackedFileDescriptor?) async throws -> [UInt8] {
+    internal func captureOutput(from fileDescriptor: consuming TrackedFileDescriptor) async throws -> [UInt8] {
         return try await withCheckedThrowingContinuation { continuation in
-            guard let fileDescriptor = fileDescriptor else {
-                // Show not happen due to type system constraints
-                fatalError("Trying to capture output without file descriptor")
-            }
-            fileDescriptor.wrapped.readUntilEOF(upToLength: self.maxSize) { result in
+            fileDescriptor.platformDescriptor.readUntilEOF(upToLength: self.maxSize) { result in
                 switch result {
                 case .success(let data):
                     // FIXME: remove workaround for
@@ -303,21 +298,10 @@ extension OutputProtocol {
 @available(SubprocessSpan, *)
 #endif
 extension OutputProtocol {
-    @_disfavoredOverload
-    internal func createPipe() throws -> CreatedPipe {
-        if let discard = self as? DiscardedOutput {
-            return try discard.createPipe()
-        } else if let fdOutput = self as? FileDescriptorOutput {
-            return try fdOutput.createPipe()
-        }
-        // Base pipe based implementation for everything else
-        return try CreatedPipe(closeWhenDone: true)
-    }
-
     /// Capture the output from the subprocess up to maxSize
     @_disfavoredOverload
     internal func captureOutput(
-        from fileDescriptor: TrackedFileDescriptor?
+        from fileDescriptor: consuming TrackedFileDescriptor
     ) async throws -> OutputType {
         if let bytesOutput = self as? BytesOutput {
             return try await bytesOutput.captureOutput(from: fileDescriptor) as! Self.OutputType
@@ -327,12 +311,8 @@ extension OutputProtocol {
                 continuation.resume(returning: () as! OutputType)
                 return
             }
-            guard let fileDescriptor = fileDescriptor else {
-                // Show not happen due to type system constraints
-                fatalError("Trying to capture output without file descriptor")
-            }
 
-            fileDescriptor.wrapped.readUntilEOF(upToLength: self.maxSize) { result in
+            fileDescriptor.platformDescriptor.readUntilEOF(upToLength: self.maxSize) { result in
                 do {
                     switch result {
                     case .success(let data):
@@ -356,7 +336,7 @@ extension OutputProtocol {
 @available(SubprocessSpan, *)
 #endif
 extension OutputProtocol where OutputType == Void {
-    internal func captureOutput(from fileDescriptor: TrackedFileDescriptor?) async throws {}
+    internal func captureOutput(from fileDescriptor: consuming TrackedFileDescriptor?) async throws {}
 
     #if SubprocessSpan
     /// Convert the output from Data to expected output type

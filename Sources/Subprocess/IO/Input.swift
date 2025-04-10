@@ -31,10 +31,10 @@ import FoundationEssentials
 
 /// `InputProtocol` defines the `write(with:)` method that a type
 /// must implement to serve as the input source for a subprocess.
-public protocol InputProtocol: Sendable, ~Copyable {
+public protocol InputProtocol: Sendable {
     /// Asynchronously write the input to the subprocess using the
     /// write file descriptor
-    func write(with writer: StandardInputWriter) async throws
+    func write(with writer: borrowing StandardInputWriter) async throws
 }
 
 /// A concrete `Input` type for subprocesses that indicates
@@ -43,25 +43,23 @@ public protocol InputProtocol: Sendable, ~Copyable {
 /// to `/dev/null`, while on Windows, it does not bind any
 /// file handle to the subprocess standard input handle.
 public struct NoInput: InputProtocol {
-    internal func createPipe() throws -> CreatedPipe {
-        #if os(Windows)
+    internal func createReadFileDescriptor() throws -> TrackedFileDescriptor? {
+#if os(Windows)
         // On Windows, instead of binding to dev null,
         // we don't set the input handle in the `STARTUPINFOW`
         // to signal no input
-        return CreatedPipe(
-            readFileDescriptor: nil,
-            writeFileDescriptor: nil
-        )
-        #else
+        return nil
+#else
         let devnull: FileDescriptor = try .openDevNull(withAcessMode: .readOnly)
-        return CreatedPipe(
-            readFileDescriptor: .init(devnull, closeWhenDone: true),
-            writeFileDescriptor: nil
-        )
-        #endif
+        return TrackedFileDescriptor(devnull, closeWhenDone: true)
+#endif
+    }
+    
+    internal func createWriteFileDescriptor() throws -> TrackedFileDescriptor? {
+        nil
     }
 
-    public func write(with writer: StandardInputWriter) async throws {
+    public func write(with writer: borrowing StandardInputWriter) async throws {
         // noop
     }
 
@@ -77,17 +75,16 @@ public struct FileDescriptorInput: InputProtocol {
     private let fileDescriptor: FileDescriptor
     private let closeAfterSpawningProcess: Bool
 
-    internal func createPipe() throws -> CreatedPipe {
-        return CreatedPipe(
-            readFileDescriptor: .init(
-                self.fileDescriptor,
-                closeWhenDone: self.closeAfterSpawningProcess
-            ),
-            writeFileDescriptor: nil
-        )
+    internal func createReadFileDescriptor() throws -> TrackedFileDescriptor? {
+        // TODO: This creates non-copyable values out of the same fd "n" times
+        TrackedFileDescriptor(fileDescriptor, closeWhenDone: closeAfterSpawningProcess)
     }
 
-    public func write(with writer: StandardInputWriter) async throws {
+    internal func createWriteFileDescriptor() throws -> TrackedFileDescriptor? {
+        nil
+    }
+    
+    public func write(with writer: borrowing StandardInputWriter) async throws {
         // noop
     }
 
@@ -110,7 +107,7 @@ public struct StringInput<
 >: InputProtocol {
     private let string: InputString
 
-    public func write(with writer: StandardInputWriter) async throws {
+    public func write(with writer: borrowing StandardInputWriter) async throws {
         guard let array = self.string.byteArray(using: Encoding.self) else {
             return
         }
@@ -127,7 +124,7 @@ public struct StringInput<
 public struct ArrayInput: InputProtocol {
     private let array: [UInt8]
 
-    public func write(with writer: StandardInputWriter) async throws {
+    public func write(with writer: borrowing StandardInputWriter) async throws {
         _ = try await writer.write(self.array)
     }
 
@@ -139,7 +136,7 @@ public struct ArrayInput: InputProtocol {
 /// A concrete `Input` type for subprocess that indicates that
 /// the Subprocess should read its input from `StandardInputWriter`.
 public struct CustomWriteInput: InputProtocol {
-    public func write(with writer: StandardInputWriter) async throws {
+    public func write(with writer: borrowing StandardInputWriter) async throws {
         // noop
     }
 
@@ -195,26 +192,26 @@ extension InputProtocol {
     }
 }
 
-extension InputProtocol {
-    internal func createPipe() throws -> CreatedPipe {
-        if let noInput = self as? NoInput {
-            return try noInput.createPipe()
-        } else if let fdInput = self as? FileDescriptorInput {
-            return try fdInput.createPipe()
-        }
-        // Base implementation
-        return try CreatedPipe(closeWhenDone: true)
-    }
-}
+//extension InputProtocol {
+//    internal func createPipe() throws -> CreatedPipe {
+//        if let noInput = self as? NoInput {
+//            return try noInput.createPipe()
+//        } else if let fdInput = self as? FileDescriptorInput {
+//            return try fdInput.createPipe()
+//        }
+//        // Base implementation
+//        return try CreatedPipe(closeWhenDone: true)
+//    }
+//}
 
 // MARK: - StandardInputWriter
 
 /// A writer that writes to the standard input of the subprocess.
-public final actor StandardInputWriter: Sendable {
+public struct StandardInputWriter: Sendable, ~Copyable {
 
     internal let fileDescriptor: TrackedFileDescriptor
 
-    init(fileDescriptor: TrackedFileDescriptor) {
+    init(fileDescriptor: consuming TrackedFileDescriptor) {
         self.fileDescriptor = fileDescriptor
     }
 
@@ -224,7 +221,7 @@ public final actor StandardInputWriter: Sendable {
     public func write(
         _ array: [UInt8]
     ) async throws -> Int {
-        return try await self.fileDescriptor.wrapped.write(array)
+        return try await self.fileDescriptor.platformDescriptor.write(array)
     }
 
     /// Write a `RawSpan` to the standard input of the subprocess.
@@ -233,7 +230,7 @@ public final actor StandardInputWriter: Sendable {
     #if SubprocessSpan
     @available(SubprocessSpan, *)
     public func write(_ span: borrowing RawSpan) async throws -> Int {
-        return try await self.fileDescriptor.wrapped.write(span)
+        return try await self.fileDescriptor.platformDescriptor.write(span)
     }
     #endif
 
@@ -253,7 +250,7 @@ public final actor StandardInputWriter: Sendable {
     }
 
     /// Signal all writes are finished
-    public func finish() async throws {
+    consuming public func finish() async throws {
         try self.fileDescriptor.safelyClose()
     }
 }

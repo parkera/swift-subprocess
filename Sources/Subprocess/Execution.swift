@@ -33,19 +33,18 @@ import WinSDK
 #if SubprocessSpan
 @available(SubprocessSpan, *)
 #endif
-public final class Execution<
+public struct Execution<
     Output: OutputProtocol,
     Error: OutputProtocol
->: Sendable {
+>: Sendable, ~Copyable {
     /// The process identifier of the current execution
     public let processIdentifier: ProcessIdentifier
 
     internal let output: Output
     internal let error: Error
-    internal let outputPipe: CreatedPipe
-    internal let errorPipe: CreatedPipe
-    internal let outputConsumptionState: AtomicBox
-
+    internal var outputRead: TrackedFileDescriptor?
+    internal var errorRead: TrackedFileDescriptor?
+    
     #if os(Windows)
     internal let consoleBehavior: PlatformOptions.ConsoleBehavior
 
@@ -70,15 +69,14 @@ public final class Execution<
         processIdentifier: ProcessIdentifier,
         output: Output,
         error: Error,
-        outputPipe: CreatedPipe,
-        errorPipe: CreatedPipe
+        outputRead: consuming TrackedFileDescriptor?,
+        errorRead: consuming TrackedFileDescriptor?,
     ) {
         self.processIdentifier = processIdentifier
         self.output = output
         self.error = error
-        self.outputPipe = outputPipe
-        self.errorPipe = errorPipe
-        self.outputConsumptionState = AtomicBox()
+        self.outputRead = consume outputRead
+        self.errorRead = consume errorRead
     }
     #endif  // os(Windows)
 }
@@ -88,21 +86,18 @@ public final class Execution<
 #endif
 extension Execution where Output == SequenceOutput {
     /// The standard output of the subprocess.
-    ///
-    /// Accessing this property will **fatalError** if this property was
-    /// accessed multiple times. Subprocess communicates with parent process
-    /// via pipe under the hood and each pipe can only be consumed once.
-    public var standardOutput: AsyncBufferSequence {
-        let consumptionState = self.outputConsumptionState.bitwiseXor(
-            OutputConsumptionState.standardOutputConsumed
-        )
-
-        guard consumptionState.contains(.standardOutputConsumed),
-            let fd = self.outputPipe.readFileDescriptor
-        else {
-            fatalError("The standard output has already been consumed")
+    /// Accessing this property will `assert` if property was accessed multiple times. Subprocess communicates with parent process via a pipe, and each pipe can only be consumed once.
+    public var standardOutput: some AsyncSequence<SequenceOutput.Buffer, any Swift.Error> {
+        mutating get {
+            let result: AsyncBufferSequence
+            if let outputRead {
+                result = AsyncBufferSequence(fileDescriptor: outputRead)
+            } else {
+                fatalError("Execution.standardOutput was accessed more than once")
+            }
+            self = .init(processIdentifier: processIdentifier, output: output, error: error, outputRead: nil, errorRead: errorRead)
+            return result
         }
-        return AsyncBufferSequence(fileDescriptor: fd)
     }
 }
 
@@ -111,21 +106,18 @@ extension Execution where Output == SequenceOutput {
 #endif
 extension Execution where Error == SequenceOutput {
     /// The standard error of the subprocess.
-    ///
-    /// Accessing this property will **fatalError** if this property was
-    /// accessed multiple times. Subprocess communicates with parent process
-    /// via pipe under the hood and each pipe can only be consumed once.
-    public var standardError: AsyncBufferSequence {
-        let consumptionState = self.outputConsumptionState.bitwiseXor(
-            OutputConsumptionState.standardOutputConsumed
-        )
-
-        guard consumptionState.contains(.standardErrorConsumed),
-            let fd = self.errorPipe.readFileDescriptor
-        else {
-            fatalError("The standard output has already been consumed")
+    /// Accessing this property will `assert` if property was accessed multiple times. Subprocess communicates with parent process via a pipe, and each pipe can only be consumed once.
+    public var standardError: some AsyncSequence<SequenceOutput.Buffer, any Swift.Error> {
+        mutating get {
+            let result: AsyncBufferSequence
+            if let errorRead {
+                result = AsyncBufferSequence(fileDescriptor: errorRead)
+            } else {
+                fatalError("Execution.standardError was accessed more than once")
+            }
+            self = .init(processIdentifier: processIdentifier, output: output, error: error, outputRead: outputRead, errorRead: nil)
+            return result
         }
-        return AsyncBufferSequence(fileDescriptor: fd)
     }
 }
 
@@ -157,22 +149,31 @@ internal typealias CapturedIOs<
 @available(SubprocessSpan, *)
 #endif
 extension Execution {
-    internal func captureIOs() async throws -> CapturedIOs<
+    /// Consume the output read and error read file descriptors, turning them into the stdout/stderrr types.
+    consuming internal func captureIOs() async throws -> CapturedIOs<
         Output.OutputType, Error.OutputType
     > {
+        let standardOutput = output
+        let standardError = error
+        
+        // Wrap the ~Copyable file descriptors in an Optional so we can pass them to a closure which executes once. There is no way to tell the compiler that the closure is only executed once, so this moves that check to a dynamic one (at the force unwrap below).
+        var readR : TrackedFileDescriptor? = outputRead
+        var errorR : TrackedFileDescriptor? = errorRead
+        self = .init(processIdentifier: processIdentifier, output: output, error: error, outputRead: nil, errorRead: nil)
         return try await withThrowingTaskGroup(
             of: OutputCapturingState<Output.OutputType, Error.OutputType>.self
         ) { group in
+            // 2nd layer of moving noncopyable types into a wrapper type
+            var readRR = readR.take()
+            var errorRR = errorR.take()
             group.addTask {
-                let stdout = try await self.output.captureOutput(
-                    from: self.outputPipe.readFileDescriptor
-                )
+                let r = readRR.take()!
+                let stdout = try await standardOutput.captureOutput(from: r)
                 return .standardOutputCaptured(stdout)
             }
             group.addTask {
-                let stderr = try await self.error.captureOutput(
-                    from: self.errorPipe.readFileDescriptor
-                )
+                let e = errorRR.take()!
+                let stderr = try await standardError.captureOutput(from: e)
                 return .standardErrorCaptured(stderr)
             }
 

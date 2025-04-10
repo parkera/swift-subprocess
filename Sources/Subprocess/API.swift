@@ -132,7 +132,7 @@ public func run<Result, Input: InputProtocol, Output: OutputProtocol, Error: Out
     output: Output,
     error: Error,
     isolation: isolated (any Actor)? = #isolation,
-    body: ((Execution<Output, Error>) async throws -> Result)
+    body: ((consuming Execution<Output, Error>) async throws -> Result)
 ) async throws -> ExecutionResult<Result> where Output.OutputType == Void, Error.OutputType == Void {
     return try await Configuration(
         executable: executable,
@@ -172,7 +172,7 @@ public func run<Result, Output: OutputProtocol, Error: OutputProtocol>(
     output: Output,
     error: Error,
     isolation: isolated (any Actor)? = #isolation,
-    body: ((Execution<Output, Error>, StandardInputWriter) async throws -> Result)
+    body: ((borrowing Execution<Output, Error>, borrowing StandardInputWriter) async throws -> Result)
 ) async throws -> ExecutionResult<Result> where Output.OutputType == Void, Error.OutputType == Void {
     return try await Configuration(
         executable: executable,
@@ -212,12 +212,13 @@ public func run<
         output: output,
         error: error
     ) { execution in
+        let pid = execution.processIdentifier
         let (
             standardOutput,
             standardError
         ) = try await execution.captureIOs()
         return (
-            processIdentifier: execution.processIdentifier,
+            processIdentifier: pid,
             standardOutput: standardOutput,
             standardError: standardError
         )
@@ -248,7 +249,7 @@ public func run<Result, Output: OutputProtocol, Error: OutputProtocol>(
     output: Output,
     error: Error,
     isolation: isolated (any Actor)? = #isolation,
-    body: ((Execution<Output, Error>, StandardInputWriter) async throws -> Result)
+    body: ((borrowing Execution<Output, Error>, borrowing StandardInputWriter) async throws -> Result)
 ) async throws -> ExecutionResult<Result> where Output.OutputType == Void, Error.OutputType == Void {
     return try await configuration.run(output: output, error: error, body)
 }
@@ -295,6 +296,46 @@ public func runDetached(
     return try runDetached(config, input: input, output: output, error: error)
 }
 
+private func cleanupFileDescriptors(
+    _ inputRead: consuming TrackedFileDescriptor?,
+    _ inputWrite: consuming TrackedFileDescriptor?,
+    _ outputWrite: consuming TrackedFileDescriptor?,
+    _ errorWrite: consuming TrackedFileDescriptor?
+) throws {
+    var inputError: Swift.Error?
+    var outputError: Swift.Error?
+    var errorError: Swift.Error?
+
+    do {
+        try inputRead?.safelyClose()
+        try inputWrite?.safelyClose()
+    } catch {
+        inputError = error
+    }
+
+    do {
+        try outputWrite?.safelyClose()
+    } catch {
+        outputError = error
+    }
+
+    do {
+        try errorWrite?.safelyClose()
+    } catch {
+        errorError = error
+    }
+
+    if let inputError = inputError {
+        throw inputError
+    }
+    if let outputError = outputError {
+        throw outputError
+    }
+    if let errorError = errorError {
+        throw errorError
+    }
+}
+
 /// Run a executable with given configuration and return its process
 /// identifier immediately without monitoring the state of the
 /// subprocess nor waiting until it exits.
@@ -319,36 +360,73 @@ public func runDetached(
 ) throws -> ProcessIdentifier {
     switch (input, output, error) {
     case (.none, .none, .none):
+        let processInput = NoInput()
         let processOutput = DiscardedOutput()
         let processError = DiscardedOutput()
+        
+        let inputRead = try processInput.createReadFileDescriptor()
+        let inputWrite = try processInput.createWriteFileDescriptor()
+        let outputRead = try processOutput.createReadFileDescriptor()
+        let outputWrite = try processOutput.createWriteFileDescriptor()
+        let errorRead = try processError.createReadFileDescriptor()
+        let errorWrite = try processError.createWriteFileDescriptor()
+
         return try configuration.spawn(
-            withInput: NoInput().createPipe(),
+            inputRead: inputRead,
+            inputWrite: inputWrite,
             output: processOutput,
-            outputPipe: try processOutput.createPipe(),
+            outputRead: outputRead,
+            outputWrite: outputWrite,
             error: processError,
-            errorPipe: try processError.createPipe()
+            errorRead: errorRead,
+            errorWrite: errorWrite
         ).processIdentifier
     case (.none, .none, .some(let errorFd)):
+        let processInput = NoInput()
         let processOutput = DiscardedOutput()
         let processError = FileDescriptorOutput(fileDescriptor: errorFd, closeAfterSpawningProcess: false)
+        
+        let inputRead = try processInput.createReadFileDescriptor()
+        let inputWrite = try processInput.createWriteFileDescriptor()
+        let outputRead = try processOutput.createReadFileDescriptor()
+        let outputWrite = try processOutput.createWriteFileDescriptor()
+        let errorRead = try processError.createReadFileDescriptor()
+        let errorWrite = try processError.createWriteFileDescriptor()
+
         return try configuration.spawn(
-            withInput: NoInput().createPipe(),
+            inputRead: inputRead,
+            inputWrite: inputWrite,
             output: processOutput,
-            outputPipe: try processOutput.createPipe(),
+            outputRead: outputRead,
+            outputWrite: outputWrite,
             error: processError,
-            errorPipe: try processError.createPipe()
+            errorRead: errorRead,
+            errorWrite: errorWrite
         ).processIdentifier
     case (.none, .some(let outputFd), .none):
+        let processInput = NoInput()
         let processOutput = FileDescriptorOutput(fileDescriptor: outputFd, closeAfterSpawningProcess: false)
         let processError = DiscardedOutput()
+        
+        let inputRead = try processInput.createReadFileDescriptor()
+        let inputWrite = try processInput.createWriteFileDescriptor()
+        let outputRead = try processOutput.createReadFileDescriptor()
+        let outputWrite = try processOutput.createWriteFileDescriptor()
+        let errorRead = try processError.createReadFileDescriptor()
+        let errorWrite = try processError.createWriteFileDescriptor()
+
         return try configuration.spawn(
-            withInput: NoInput().createPipe(),
+            inputRead: inputRead,
+            inputWrite: inputWrite,
             output: processOutput,
-            outputPipe: try processOutput.createPipe(),
+            outputRead: outputRead,
+            outputWrite: outputWrite,
             error: processError,
-            errorPipe: try processError.createPipe()
+            errorRead: errorRead,
+            errorWrite: errorWrite
         ).processIdentifier
     case (.none, .some(let outputFd), .some(let errorFd)):
+        let processInput = NoInput()
         let processOutput = FileDescriptorOutput(
             fileDescriptor: outputFd,
             closeAfterSpawningProcess: false
@@ -357,53 +435,110 @@ public func runDetached(
             fileDescriptor: errorFd,
             closeAfterSpawningProcess: false
         )
+        
+        let inputRead = try processInput.createReadFileDescriptor()
+        let inputWrite = try processInput.createWriteFileDescriptor()
+        let outputRead = try processOutput.createReadFileDescriptor()
+        let outputWrite = try processOutput.createWriteFileDescriptor()
+        let errorRead = try processError.createReadFileDescriptor()
+        let errorWrite = try processError.createWriteFileDescriptor()
+
         return try configuration.spawn(
-            withInput: NoInput().createPipe(),
+            inputRead: inputRead,
+            inputWrite: inputWrite,
             output: processOutput,
-            outputPipe: try processOutput.createPipe(),
+            outputRead: outputRead,
+            outputWrite: outputWrite,
             error: processError,
-            errorPipe: try processError.createPipe()
+            errorRead: errorRead,
+            errorWrite: errorWrite
         ).processIdentifier
     case (.some(let inputFd), .none, .none):
+        let processInput = FileDescriptorInput(
+            fileDescriptor: inputFd,
+            closeAfterSpawningProcess: false
+        )
         let processOutput = DiscardedOutput()
         let processError = DiscardedOutput()
+        
+        let inputRead = try processInput.createReadFileDescriptor()
+        let inputWrite = try processInput.createWriteFileDescriptor()
+        let outputRead = try processOutput.createReadFileDescriptor()
+        let outputWrite = try processOutput.createWriteFileDescriptor()
+        let errorRead = try processError.createReadFileDescriptor()
+        let errorWrite = try processError.createWriteFileDescriptor()
+
         return try configuration.spawn(
-            withInput: FileDescriptorInput(
-                fileDescriptor: inputFd,
-                closeAfterSpawningProcess: false
-            ).createPipe(),
+            inputRead: inputRead,
+            inputWrite: inputWrite,
             output: processOutput,
-            outputPipe: try processOutput.createPipe(),
+            outputRead: outputRead,
+            outputWrite: outputWrite,
             error: processError,
-            errorPipe: try processError.createPipe()
+            errorRead: errorRead,
+            errorWrite: errorWrite
         ).processIdentifier
     case (.some(let inputFd), .none, .some(let errorFd)):
+        let processInput = FileDescriptorInput(
+            fileDescriptor: inputFd,
+            closeAfterSpawningProcess: false
+        )
         let processOutput = DiscardedOutput()
         let processError = FileDescriptorOutput(
             fileDescriptor: errorFd,
             closeAfterSpawningProcess: false
         )
+        
+        let inputRead = try processInput.createReadFileDescriptor()
+        let inputWrite = try processInput.createWriteFileDescriptor()
+        let outputRead = try processOutput.createReadFileDescriptor()
+        let outputWrite = try processOutput.createWriteFileDescriptor()
+        let errorRead = try processError.createReadFileDescriptor()
+        let errorWrite = try processError.createWriteFileDescriptor()
+
         return try configuration.spawn(
-            withInput: FileDescriptorInput(fileDescriptor: inputFd, closeAfterSpawningProcess: false).createPipe(),
+            inputRead: inputRead,
+            inputWrite: inputWrite,
             output: processOutput,
-            outputPipe: try processOutput.createPipe(),
+            outputRead: outputRead,
+            outputWrite: outputWrite,
             error: processError,
-            errorPipe: try processError.createPipe()
+            errorRead: errorRead,
+            errorWrite: errorWrite
         ).processIdentifier
     case (.some(let inputFd), .some(let outputFd), .none):
+        let processInput = FileDescriptorInput(
+            fileDescriptor: inputFd,
+            closeAfterSpawningProcess: false
+        )
         let processOutput = FileDescriptorOutput(
             fileDescriptor: outputFd,
             closeAfterSpawningProcess: false
         )
         let processError = DiscardedOutput()
+        
+        let inputRead = try processInput.createReadFileDescriptor()
+        let inputWrite = try processInput.createWriteFileDescriptor()
+        let outputRead = try processOutput.createReadFileDescriptor()
+        let outputWrite = try processOutput.createWriteFileDescriptor()
+        let errorRead = try processError.createReadFileDescriptor()
+        let errorWrite = try processError.createWriteFileDescriptor()
+
         return try configuration.spawn(
-            withInput: FileDescriptorInput(fileDescriptor: inputFd, closeAfterSpawningProcess: false).createPipe(),
+            inputRead: inputRead,
+            inputWrite: inputWrite,
             output: processOutput,
-            outputPipe: try processOutput.createPipe(),
+            outputRead: outputRead,
+            outputWrite: outputWrite,
             error: processError,
-            errorPipe: try processError.createPipe()
+            errorRead: errorRead,
+            errorWrite: errorWrite
         ).processIdentifier
     case (.some(let inputFd), .some(let outputFd), .some(let errorFd)):
+        let processInput = FileDescriptorInput(
+            fileDescriptor: inputFd,
+            closeAfterSpawningProcess: false
+        )
         let processOutput = FileDescriptorOutput(
             fileDescriptor: outputFd,
             closeAfterSpawningProcess: false
@@ -412,12 +547,23 @@ public func runDetached(
             fileDescriptor: errorFd,
             closeAfterSpawningProcess: false
         )
+        
+        let inputRead = try processInput.createReadFileDescriptor()
+        let inputWrite = try processInput.createWriteFileDescriptor()
+        let outputRead = try processOutput.createReadFileDescriptor()
+        let outputWrite = try processOutput.createWriteFileDescriptor()
+        let errorRead = try processError.createReadFileDescriptor()
+        let errorWrite = try processError.createWriteFileDescriptor()
+
         return try configuration.spawn(
-            withInput: FileDescriptorInput(fileDescriptor: inputFd, closeAfterSpawningProcess: false).createPipe(),
+            inputRead: inputRead,
+            inputWrite: inputWrite,
             output: processOutput,
-            outputPipe: try processOutput.createPipe(),
+            outputRead: outputRead,
+            outputWrite: outputWrite,
             error: processError,
-            errorPipe: try processError.createPipe()
+            errorRead: errorRead,
+            errorWrite: errorWrite
         ).processIdentifier
     }
 }

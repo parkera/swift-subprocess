@@ -32,7 +32,7 @@ internal import Dispatch
 public struct DataInput: InputProtocol {
     private let data: Data
 
-    public func write(with writer: StandardInputWriter) async throws {
+    public func write(with writer: borrowing StandardInputWriter) async throws {
         _ = try await writer.write(self.data)
     }
 
@@ -48,7 +48,7 @@ public struct DataSequenceInput<
 >: InputProtocol where InputSequence.Element == Data {
     private let sequence: InputSequence
 
-    public func write(with writer: StandardInputWriter) async throws {
+    public func write(with writer: borrowing StandardInputWriter) async throws {
         var buffer = Data()
         for chunk in self.sequence {
             buffer.append(chunk)
@@ -68,11 +68,11 @@ public struct DataAsyncSequenceInput<
 >: InputProtocol where InputSequence.Element == Data {
     private let sequence: InputSequence
 
-    private func writeChunk(_ chunk: Data, with writer: StandardInputWriter) async throws {
+    private func writeChunk(_ chunk: Data, with writer: borrowing StandardInputWriter) async throws {
         _ = try await writer.write(chunk)
     }
 
-    public func write(with writer: StandardInputWriter) async throws {
+    public func write(with writer: borrowing StandardInputWriter) async throws {
         for try await chunk in self.sequence {
             try await self.writeChunk(chunk, with: writer)
         }
@@ -111,7 +111,7 @@ extension StandardInputWriter {
     public func write(
         _ data: Data
     ) async throws -> Int {
-        return try await self.fileDescriptor.wrapped.write(data)
+        return try await self.fileDescriptor.platformDescriptor.write(data)
     }
 
     /// Write a AsyncSequence of Data to the standard input of the subprocess.

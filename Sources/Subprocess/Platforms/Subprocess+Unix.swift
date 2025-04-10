@@ -129,6 +129,20 @@ extension Execution {
             )
         }
     }
+    
+    internal static func send(
+        signal: Signal,
+        to processIdentifier: ProcessIdentifier,
+        toProcessGroup shouldSendToProcessGroup: Bool = false
+    ) throws {
+        let pid = shouldSendToProcessGroup ? -(processIdentifier.value) : processIdentifier.value
+        guard kill(pid, signal.rawValue) == 0 else {
+            throw SubprocessError(
+                code: .init(.failedToSendSignal(signal.rawValue)),
+                underlyingError: .init(rawValue: errno)
+            )
+        }
+    }
 
     internal func tryTerminate() -> Swift.Error? {
         do {
@@ -326,45 +340,6 @@ extension Configuration {
         gidPtr: UnsafeMutablePointer<gid_t>?,
         supplementaryGroups: [gid_t]?
     )
-
-    internal func preSpawn<Result>(
-        _ work: (PreSpawnArgs) throws -> Result
-    ) throws -> Result {
-        // Prepare environment
-        let env = self.environment.createEnv()
-        defer {
-            for ptr in env { ptr?.deallocate() }
-        }
-
-        var uidPtr: UnsafeMutablePointer<uid_t>? = nil
-        if let userID = self.platformOptions.userID {
-            uidPtr = .allocate(capacity: 1)
-            uidPtr?.pointee = userID
-        }
-        defer {
-            uidPtr?.deallocate()
-        }
-        var gidPtr: UnsafeMutablePointer<gid_t>? = nil
-        if let groupID = self.platformOptions.groupID {
-            gidPtr = .allocate(capacity: 1)
-            gidPtr?.pointee = groupID
-        }
-        defer {
-            gidPtr?.deallocate()
-        }
-        var supplementaryGroups: [gid_t]?
-        if let groupsValue = self.platformOptions.supplementaryGroups {
-            supplementaryGroups = groupsValue
-        }
-        return try work(
-            (
-                env: env,
-                uidPtr: uidPtr,
-                gidPtr: gidPtr,
-                supplementaryGroups: supplementaryGroups
-            )
-        )
-    }
 
     internal static func pathAccessible(_ path: String, mode: Int32) -> Bool {
         return path.withCString {

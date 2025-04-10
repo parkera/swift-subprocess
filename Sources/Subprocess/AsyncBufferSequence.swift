@@ -18,43 +18,45 @@
 #if SubprocessSpan
 @available(SubprocessSpan, *)
 #endif
-public struct AsyncBufferSequence: AsyncSequence, Sendable {
-    public typealias Failure = any Swift.Error
-    public typealias Element = SequenceOutput.Buffer
+internal struct AsyncBufferSequence: AsyncSequence, Sendable /*, ~Copyable*/ {
+    internal typealias Failure = any Swift.Error
+
+    internal typealias Element = SequenceOutput.Buffer
 
     @_nonSendable
-    public struct Iterator: AsyncIteratorProtocol {
-        public typealias Element = SequenceOutput.Buffer
+    internal struct Iterator: AsyncIteratorProtocol /*, ~Copyable */ {
+        internal typealias Element = SequenceOutput.Buffer
 
-        private let fileDescriptor: TrackedFileDescriptor
+        private let fileDescriptor: PlatformFileDescriptor
         private var buffer: [UInt8]
         private var currentPosition: Int
         private var finished: Bool
 
-        internal init(fileDescriptor: TrackedFileDescriptor) {
+        internal init(fileDescriptor: PlatformFileDescriptor) {
             self.fileDescriptor = fileDescriptor
             self.buffer = []
             self.currentPosition = 0
             self.finished = false
         }
 
-        public mutating func next() async throws -> SequenceOutput.Buffer? {
-            let data = try await self.fileDescriptor.wrapped.readChunk(
+        internal mutating func next() async throws -> SequenceOutput.Buffer? {
+            let data = try await self.fileDescriptor.platformDescriptor.readChunk(
                 upToLength: readBufferSize
             )
             if data == nil {
                 // We finished reading. Close the file descriptor now
-                try self.fileDescriptor.safelyClose()
+                //close(fileDescriptor.rawValue)
+                //try self.fileDescriptor.safelyClose()
                 return nil
             }
             return data
         }
     }
 
-    private let fileDescriptor: TrackedFileDescriptor
+    private let fileDescriptor: PlatformFileDescriptor
 
-    init(fileDescriptor: TrackedFileDescriptor) {
-        self.fileDescriptor = fileDescriptor
+    init(fileDescriptor: consuming TrackedFileDescriptor) {
+        self.fileDescriptor = fileDescriptor.platformDescriptor
     }
 
     public func makeAsyncIterator() -> Iterator {
