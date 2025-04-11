@@ -432,6 +432,7 @@ extension SubprocessUnixTests {
             output: .sequence,
             error: .discarded
         ) { execution in
+            var execution = execution
             var buffer = Data()
             for try await chunk in execution.standardOutput {
                 let currentChunk = chunk._withUnsafeBytes { Data($0) }
@@ -472,6 +473,7 @@ extension SubprocessUnixTests {
             output: .sequence,
             error: .discarded
         ) { execution in
+            var execution = execution
             var buffer = Data()
             for try await chunk in execution.standardOutput {
                 let currentChunk = chunk._withUnsafeBytes { Data($0) }
@@ -621,6 +623,7 @@ extension SubprocessUnixTests {
             output: .sequence,
             error: .discarded
         ) { execution in
+            var execution = execution
             var buffer = Data()
             for try await chunk in execution.standardOutput {
                 let currentChunk = chunk._withUnsafeBytes { Data($0) }
@@ -819,8 +822,13 @@ extension SubprocessUnixTests {
             output: .sequence,
             error: .discarded
         ) { subprocess in
+            var subprocess: Execution<SequenceOutput, DiscardedOutput>? = subprocess
             return try await withThrowingTaskGroup(of: Void.self) { group in
+                var subprocess = subprocess.take()!
+                let stdOut = subprocess.standardOutput
+                var box : Execution? = subprocess
                 group.addTask {
+                    let subprocess = box.take()!
                     try await Task.sleep(for: .milliseconds(200))
                     // Send shut down signal
                     await subprocess.teardown(using: [
@@ -831,7 +839,7 @@ extension SubprocessUnixTests {
                 }
                 group.addTask {
                     var outputs: [String] = []
-                    for try await bit in subprocess.standardOutput {
+                    for try await bit in stdOut {
                         let bitString = bit._withUnsafeBytes { ptr in
                             return String(decoding: ptr, as: UTF8.self)
                         }.trimmingCharacters(in: .whitespacesAndNewlines)

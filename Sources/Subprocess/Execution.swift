@@ -48,7 +48,7 @@ public struct Execution<
     #if os(Windows)
     internal let consoleBehavior: PlatformOptions.ConsoleBehavior
 
-    init(
+    fileprivate init(
         processIdentifier: ProcessIdentifier,
         output: Output,
         error: Error,
@@ -86,7 +86,7 @@ public struct Execution<
 #endif
 extension Execution where Output == SequenceOutput {
     /// The standard output of the subprocess.
-    /// Accessing this property will `assert` if property was accessed multiple times. Subprocess communicates with parent process via a pipe, and each pipe can only be consumed once.
+    /// Accessing this property will assert if property was accessed multiple times. Subprocess communicates with parent process via a pipe, and each pipe can only be consumed once.
     public var standardOutput: some AsyncSequence<SequenceOutput.Buffer, any Swift.Error> {
         mutating get {
             let result: AsyncBufferSequence
@@ -106,7 +106,7 @@ extension Execution where Output == SequenceOutput {
 #endif
 extension Execution where Error == SequenceOutput {
     /// The standard error of the subprocess.
-    /// Accessing this property will `assert` if property was accessed multiple times. Subprocess communicates with parent process via a pipe, and each pipe can only be consumed once.
+    /// Accessing this property will assert if property was accessed multiple times. Subprocess communicates with parent process via a pipe, and each pipe can only be consumed once.
     public var standardError: some AsyncSequence<SequenceOutput.Buffer, any Swift.Error> {
         mutating get {
             let result: AsyncBufferSequence
