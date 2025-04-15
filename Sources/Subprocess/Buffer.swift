@@ -62,7 +62,7 @@ extension SequenceOutput.Buffer {
     ///   that value. The argument is valid only for the duration of the
     ///   closure’s SequenceOutput.
     /// - Returns: The return value, if any, of the body closure parameter.
-    public func withUnsafeBytes<ResultType>(
+    internal func withUnsafeBytes<ResultType>(
         _ body: (UnsafeRawBufferPointer) throws -> ResultType
     ) rethrows -> ResultType {
         return try self._withUnsafeBytes(body)
@@ -136,6 +136,7 @@ extension SequenceOutput.Buffer {
     }
 }
 
+/*
 // MARK: - Hashable, Equatable
 #if SubprocessSpan
 @available(SubprocessSpan, *)
@@ -159,3 +160,4 @@ extension SequenceOutput.Buffer: Equatable, Hashable {
     }
     #endif
 }
+*/

@@ -61,7 +61,6 @@ public struct Execution<
         self.error = error
         self.outputPipe = outputPipe
         self.errorPipe = errorPipe
-        self.outputConsumptionState = AtomicBox()
         self.consoleBehavior = consoleBehavior
     }
     #else
@@ -125,19 +124,6 @@ extension Execution where Error == SequenceOutput {
 internal enum OutputCapturingState<Output: Sendable, Error: Sendable>: Sendable {
     case standardOutputCaptured(Output)
     case standardErrorCaptured(Error)
-}
-
-internal struct OutputConsumptionState: OptionSet {
-    typealias RawValue = UInt8
-
-    internal let rawValue: UInt8
-
-    internal init(rawValue: UInt8) {
-        self.rawValue = rawValue
-    }
-
-    static let standardOutputConsumed: Self = .init(rawValue: 0b0001)
-    static let standardErrorConsumed: Self = .init(rawValue: 0b0010)
 }
 
 internal typealias CapturedIOs<

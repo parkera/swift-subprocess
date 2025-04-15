@@ -76,7 +76,6 @@ public struct FileDescriptorInput: InputProtocol {
     private let closeAfterSpawningProcess: Bool
 
     internal func createReadFileDescriptor() throws -> TrackedFileDescriptor? {
-        // TODO: This creates non-copyable values out of the same fd "n" times
         TrackedFileDescriptor(fileDescriptor, closeWhenDone: closeAfterSpawningProcess)
     }
 

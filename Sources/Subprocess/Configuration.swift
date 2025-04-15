@@ -70,8 +70,8 @@ public struct Configuration: Sendable {
         error: Error,
         isolation: isolated (any Actor)? = #isolation,
         _ body: (
-            borrowing Execution<Output, Error>,
-            borrowing StandardInputWriter
+            consuming Execution<Output, Error>,
+            consuming StandardInputWriter
         ) async throws -> Result
     ) async throws -> ExecutionResult<Result> {
         let input = CustomWriteInput()
@@ -108,7 +108,6 @@ public struct Configuration: Sendable {
                 execution,
                 standardInputWriter
             )
-            try await standardInputWriter.finish()
             return ExecutionResult(
                 terminationStatus: try await waitingStatus,
                 value: result
@@ -189,6 +188,7 @@ public struct Configuration: Sendable {
                 }
 
             }
+            // Close the file descriptor manually, to catch any errors
             try writeFd.safelyClose()
             let (
                 standardOutput,

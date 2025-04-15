@@ -409,17 +409,9 @@ extension Configuration {
             break
         }
         
-        if let inputRead {
-            try inputRead.safelyClose()
-        }
-        
-        if let outputWrite {
-            try outputWrite.safelyClose()
-        }
-        
-        if let errorWrite {
-            try errorWrite.safelyClose()
-        }
+        // Close the file descriptors manually, so we can attempt to catch any errors
+        try inputRead?.safelyClose()
+        try errorWrite?.safelyClose()
         
         if let execution {
             return execution

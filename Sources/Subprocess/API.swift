@@ -172,7 +172,7 @@ public func run<Result, Output: OutputProtocol, Error: OutputProtocol>(
     output: Output,
     error: Error,
     isolation: isolated (any Actor)? = #isolation,
-    body: ((borrowing Execution<Output, Error>, borrowing StandardInputWriter) async throws -> Result)
+    body: ((consuming Execution<Output, Error>, consuming StandardInputWriter) async throws -> Result)
 ) async throws -> ExecutionResult<Result> where Output.OutputType == Void, Error.OutputType == Void {
     return try await Configuration(
         executable: executable,
@@ -249,7 +249,7 @@ public func run<Result, Output: OutputProtocol, Error: OutputProtocol>(
     output: Output,
     error: Error,
     isolation: isolated (any Actor)? = #isolation,
-    body: ((borrowing Execution<Output, Error>, borrowing StandardInputWriter) async throws -> Result)
+    body: ((consuming Execution<Output, Error>, consuming StandardInputWriter) async throws -> Result)
 ) async throws -> ExecutionResult<Result> where Output.OutputType == Void, Error.OutputType == Void {
     return try await configuration.run(output: output, error: error, body)
 }
@@ -294,46 +294,6 @@ public func runDetached(
         platformOptions: platformOptions
     )
     return try runDetached(config, input: input, output: output, error: error)
-}
-
-private func cleanupFileDescriptors(
-    _ inputRead: consuming TrackedFileDescriptor?,
-    _ inputWrite: consuming TrackedFileDescriptor?,
-    _ outputWrite: consuming TrackedFileDescriptor?,
-    _ errorWrite: consuming TrackedFileDescriptor?
-) throws {
-    var inputError: Swift.Error?
-    var outputError: Swift.Error?
-    var errorError: Swift.Error?
-
-    do {
-        try inputRead?.safelyClose()
-        try inputWrite?.safelyClose()
-    } catch {
-        inputError = error
-    }
-
-    do {
-        try outputWrite?.safelyClose()
-    } catch {
-        outputError = error
-    }
-
-    do {
-        try errorWrite?.safelyClose()
-    } catch {
-        errorError = error
-    }
-
-    if let inputError = inputError {
-        throw inputError
-    }
-    if let outputError = outputError {
-        throw outputError
-    }
-    if let errorError = errorError {
-        throw errorError
-    }
 }
 
 /// Run a executable with given configuration and return its process

@@ -47,12 +47,13 @@ internal struct TrackedFileDescriptor: ~Copyable {
     }
 
     consuming internal func safelyClose() throws {
-        guard self.closeWhenDone else {
+        guard closeWhenDone else {
             return
         }
 
         do {
-            try self.platformDescriptor.close()
+            try platformDescriptor.close()
+            closeWhenDone = false
         } catch {
             guard let errno: Errno = error as? Errno else {
                 throw error
@@ -71,7 +72,7 @@ internal struct TrackedFileDescriptor: ~Copyable {
     
     deinit {
         if closeWhenDone {
-            try? self.platformDescriptor.close()
+            try? platformDescriptor.close()
         }
     }
 }
