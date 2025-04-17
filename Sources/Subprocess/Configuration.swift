@@ -57,7 +57,7 @@ public struct Configuration: Sendable {
         self.workingDirectory = workingDirectory ?? .currentWorkingDirectory
         self.platformOptions = platformOptions
     }
-
+    
     #if SubprocessSpan
     @available(SubprocessSpan, *)
     #endif
@@ -89,10 +89,8 @@ public struct Configuration: Sendable {
         let execution = try self.spawn(
             inputRead: inputRead,
             inputWrite: inputWrite,
-            output: output,
             outputRead: outputRead,
             outputWrite: outputWrite,
-            error: error,
             errorRead: errorRead,
             errorWrite: errorWrite
         )
@@ -142,10 +140,8 @@ public struct Configuration: Sendable {
         let execution = try self.spawn(
             inputRead: inputRead,
             inputWrite: inputWrite,
-            output: output,
             outputRead: outputRead,
             outputWrite: outputWrite,
-            error: error,
             errorRead: errorRead,
             errorWrite: errorWrite
         )
@@ -233,10 +229,8 @@ public struct Configuration: Sendable {
         let execution = try self.spawn(
             inputRead: inputRead,
             inputWrite: inputWrite,
-            output: output,
             outputRead: outputRead,
             outputWrite: outputWrite,
-            error: error,
             errorRead: errorRead,
             errorWrite: errorWrite
         )
@@ -308,10 +302,8 @@ public struct Configuration: Sendable {
         let execution = try self.spawn(
             inputRead: inputRead,
             inputWrite: inputWrite,
-            output: output,
             outputRead: outputRead,
             outputWrite: outputWrite,
-            error: error,
             errorRead: errorRead,
             errorWrite: errorWrite
         )

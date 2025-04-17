@@ -144,6 +144,83 @@ public func run<Result, Input: InputProtocol, Output: OutputProtocol, Error: Out
     .run(input: input, output: output, error: error, body)
 }
 
+/// TODO: Docs
+/// Output: sequence, Error: not sequence
+#if SubprocessSpan
+@available(SubprocessSpan, *)
+#endif
+public func run<Result, Input: InputProtocol, Error: OutputProtocol>(
+    _ executable: Executable,
+    arguments: Arguments = [],
+    environment: Environment = .inherit,
+    workingDirectory: FilePath? = nil,
+    platformOptions: PlatformOptions = PlatformOptions(),
+    input: Input = .none,
+    error: Error,
+    isolation: isolated (any Actor)? = #isolation,
+    body: ((consuming Execution, AsyncBufferSequence) async throws -> Result)
+) async throws -> ExecutionResult<Result> where Error.OutputType == Void {
+    return try await Configuration(
+        executable: executable,
+        arguments: arguments,
+        environment: environment,
+        workingDirectory: workingDirectory,
+        platformOptions: platformOptions
+    )
+    .run(input: input, output: output, error: error, body)
+}
+
+/// TODO: Docs
+/// Output: not sequence, Error: sequence
+#if SubprocessSpan
+@available(SubprocessSpan, *)
+#endif
+public func run<Result, Input: InputProtocol, Error: OutputProtocol>(
+    _ executable: Executable,
+    arguments: Arguments = [],
+    environment: Environment = .inherit,
+    workingDirectory: FilePath? = nil,
+    platformOptions: PlatformOptions = PlatformOptions(),
+    input: Input = .none,
+    error: Error,
+    isolation: isolated (any Actor)? = #isolation,
+    body: ((consuming Execution, AsyncBufferSequence) async throws -> Result)
+) async throws -> ExecutionResult<Result> where Error.OutputType == Void {
+    return try await Configuration(
+        executable: executable,
+        arguments: arguments,
+        environment: environment,
+        workingDirectory: workingDirectory,
+        platformOptions: platformOptions
+    )
+    .run(input: input, output: output, error: error, body)
+}
+
+/// TODO: Docs
+/// Output: sequence, Error: sequence
+#if SubprocessSpan
+@available(SubprocessSpan, *)
+#endif
+public func run<Result, Input: InputProtocol>(
+    _ executable: Executable,
+    arguments: Arguments = [],
+    environment: Environment = .inherit,
+    workingDirectory: FilePath? = nil,
+    platformOptions: PlatformOptions = PlatformOptions(),
+    input: Input = .none,
+    isolation: isolated (any Actor)? = #isolation,
+    body: ((consuming Execution, AsyncBufferSequence, AsyncBufferSequence) async throws -> Result)
+) async throws -> ExecutionResult<Result> {
+    return try await Configuration(
+        executable: executable,
+        arguments: arguments,
+        environment: environment,
+        workingDirectory: workingDirectory,
+        platformOptions: platformOptions
+    )
+    .run(input: input, output: output, error: error, body)
+}
+
 /// Run a executable with given parameters and a custom closure
 /// to manage the running subprocess' lifetime and write to its
 /// standard input via `StandardInputWriter`
@@ -309,9 +386,7 @@ public func runDetached(
         
         return try configuration.detachedSpawn(
             inputPipe: PipeCreator(processInput),
-            output: processOutput,
             outputPipe: PipeCreator(processOutput),
-            error: processError,
             errorPipe: PipeCreator(processError)
         )
     case (.none, .none, .some(let errorFd)):
@@ -321,9 +396,7 @@ public func runDetached(
         
         return try configuration.detachedSpawn(
             inputPipe: PipeCreator(processInput),
-            output: processOutput,
             outputPipe: PipeCreator(processOutput),
-            error: processError,
             errorPipe: PipeCreator(processError)
         )
     case (.none, .some(let outputFd), .none):
@@ -333,9 +406,7 @@ public func runDetached(
         
         return try configuration.detachedSpawn(
             inputPipe: PipeCreator(processInput),
-            output: processOutput,
             outputPipe: PipeCreator(processOutput),
-            error: processError,
             errorPipe: PipeCreator(processError)
         )
     case (.none, .some(let outputFd), .some(let errorFd)):
@@ -351,9 +422,7 @@ public func runDetached(
         
         return try configuration.detachedSpawn(
             inputPipe: PipeCreator(processInput),
-            output: processOutput,
             outputPipe: PipeCreator(processOutput),
-            error: processError,
             errorPipe: PipeCreator(processError)
         )
     case (.some(let inputFd), .none, .none):
@@ -366,9 +435,7 @@ public func runDetached(
         
         return try configuration.detachedSpawn(
             inputPipe: PipeCreator(processInput),
-            output: processOutput,
             outputPipe: PipeCreator(processOutput),
-            error: processError,
             errorPipe: PipeCreator(processError)
         )
     case (.some(let inputFd), .none, .some(let errorFd)):
@@ -384,9 +451,7 @@ public func runDetached(
         
         return try configuration.detachedSpawn(
             inputPipe: PipeCreator(processInput),
-            output: processOutput,
             outputPipe: PipeCreator(processOutput),
-            error: processError,
             errorPipe: PipeCreator(processError)
         )
     case (.some(let inputFd), .some(let outputFd), .none):
@@ -402,9 +467,7 @@ public func runDetached(
         
         return try configuration.detachedSpawn(
             inputPipe: PipeCreator(processInput),
-            output: processOutput,
             outputPipe: PipeCreator(processOutput),
-            error: processError,
             errorPipe: PipeCreator(processError)
         )
     case (.some(let inputFd), .some(let outputFd), .some(let errorFd)):
@@ -423,9 +486,7 @@ public func runDetached(
         
         return try configuration.detachedSpawn(
             inputPipe: PipeCreator(processInput),
-            output: processOutput,
             outputPipe: PipeCreator(processOutput),
-            error: processError,
             errorPipe: PipeCreator(processError)
         )
     }

@@ -156,14 +156,9 @@ extension Configuration {
     #if SubprocessSpan
     @available(SubprocessSpan, *)
     #endif
-    internal func detachedSpawn<
-        Output: OutputProtocol,
-        Error: OutputProtocol
-    >(
+    internal func detachedSpawn(
         inputPipe: consuming PipeCreator,
-        output: Output,
         outputPipe: consuming PipeCreator,
-        error: Error,
         errorPipe: consuming PipeCreator
     ) throws -> ProcessIdentifier {
         let inputRead = inputPipe.read
@@ -175,10 +170,8 @@ extension Configuration {
         return try self.spawn(
             inputRead: inputRead,
             inputWrite: inputWrite,
-            output: output,
             outputRead: outputRead,
             outputWrite: outputWrite,
-            error: error,
             errorRead: errorRead,
             errorWrite: errorWrite).processIdentifier
     }
@@ -186,16 +179,11 @@ extension Configuration {
     #if SubprocessSpan
     @available(SubprocessSpan, *)
     #endif
-    internal func spawn<
-        Output: OutputProtocol,
-        Error: OutputProtocol
-    >(
+    internal func spawn(
         inputRead: consuming TrackedFileDescriptor?,
         inputWrite: borrowing TrackedFileDescriptor?,  // caller responsible for closing
-        output: Output,
         outputRead: borrowing TrackedFileDescriptor?, // caller responsible for closing
         outputWrite: consuming TrackedFileDescriptor?,
-        error: Error,
         errorRead: borrowing TrackedFileDescriptor?, // caller responsible for closing
         errorWrite: consuming TrackedFileDescriptor?
     ) throws -> Execution {
