@@ -80,7 +80,7 @@ extension Execution {
     /// Performs a sequence of teardown steps on the Subprocess.
     /// Teardown sequence always ends with a `.kill` signal
     /// - Parameter sequence: The  steps to perform.
-    public func teardown(using sequence: some Sequence<TeardownStep> & Sendable) async {
+    consuming public func teardown(using sequence: some Sequence<TeardownStep> & Sendable) async {
         let pid = processIdentifier
         await Self.teardown(processIdentifier: pid, using: sequence)
     }

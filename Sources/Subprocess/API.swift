@@ -132,7 +132,7 @@ public func run<Result, Input: InputProtocol, Output: OutputProtocol, Error: Out
     output: Output,
     error: Error,
     isolation: isolated (any Actor)? = #isolation,
-    body: ((consuming Execution<Output, Error>) async throws -> Result)
+    body: ((consuming Execution) async throws -> Result)
 ) async throws -> ExecutionResult<Result> where Output.OutputType == Void, Error.OutputType == Void {
     return try await Configuration(
         executable: executable,
@@ -172,7 +172,7 @@ public func run<Result, Output: OutputProtocol, Error: OutputProtocol>(
     output: Output,
     error: Error,
     isolation: isolated (any Actor)? = #isolation,
-    body: ((consuming Execution<Output, Error>, consuming StandardInputWriter) async throws -> Result)
+    body: ((consuming Execution, consuming StandardInputWriter) async throws -> Result)
 ) async throws -> ExecutionResult<Result> where Output.OutputType == Void, Error.OutputType == Void {
     return try await Configuration(
         executable: executable,
@@ -207,27 +207,10 @@ public func run<
     output: Output = .string,
     error: Error = .discarded
 ) async throws -> CollectedResult<Output, Error> {
-    let result = try await configuration.run(
+    return try await configuration.runCaptureIO(
         input: input,
         output: output,
         error: error
-    ) { execution in
-        let pid = execution.processIdentifier
-        let (
-            standardOutput,
-            standardError
-        ) = try await execution.captureIOs()
-        return (
-            processIdentifier: pid,
-            standardOutput: standardOutput,
-            standardError: standardError
-        )
-    }
-    return CollectedResult(
-        processIdentifier: result.value.processIdentifier,
-        terminationStatus: result.terminationStatus,
-        standardOutput: result.value.standardOutput,
-        standardError: result.value.standardError
     )
 }
 
@@ -249,7 +232,7 @@ public func run<Result, Output: OutputProtocol, Error: OutputProtocol>(
     output: Output,
     error: Error,
     isolation: isolated (any Actor)? = #isolation,
-    body: ((consuming Execution<Output, Error>, consuming StandardInputWriter) async throws -> Result)
+    body: ((consuming Execution, consuming StandardInputWriter) async throws -> Result)
 ) async throws -> ExecutionResult<Result> where Output.OutputType == Void, Error.OutputType == Void {
     return try await configuration.run(output: output, error: error, body)
 }

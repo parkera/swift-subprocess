@@ -191,14 +191,14 @@ extension Configuration {
         Error: OutputProtocol
     >(
         inputRead: consuming TrackedFileDescriptor?,
-        inputWrite: borrowing TrackedFileDescriptor?,
+        inputWrite: borrowing TrackedFileDescriptor?,  // caller responsible for closing
         output: Output,
-        outputRead: consuming TrackedFileDescriptor?,
+        outputRead: borrowing TrackedFileDescriptor?, // caller responsible for closing
         outputWrite: consuming TrackedFileDescriptor?,
         error: Error,
-        errorRead: consuming TrackedFileDescriptor?,
+        errorRead: borrowing TrackedFileDescriptor?, // caller responsible for closing
         errorWrite: consuming TrackedFileDescriptor?
-    ) throws -> Execution<Output, Error> {
+    ) throws -> Execution {
         // Instead of checking if every possible executable path
         // is valid, spawn each directly and catch ENOENT
         let possiblePaths = self.executable.possibleExecutablePaths(
@@ -232,7 +232,7 @@ extension Configuration {
             supplementaryGroups = groupsValue
         }
         
-        var execution: Execution<Output, Error>?
+        var execution: Execution?
         
         for possibleExecutablePath in possiblePaths {
             var pid: pid_t = 0
@@ -401,10 +401,6 @@ extension Configuration {
             
             execution = Execution(
                 processIdentifier: .init(value: pid),
-                output: output,
-                error: error,
-                outputRead: outputRead,
-                errorRead: errorRead
             )
             break
         }

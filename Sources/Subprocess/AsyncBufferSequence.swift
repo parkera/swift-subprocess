@@ -18,14 +18,14 @@
 #if SubprocessSpan
 @available(SubprocessSpan, *)
 #endif
-internal struct AsyncBufferSequence: AsyncSequence, Sendable {
-    internal typealias Failure = any Swift.Error
+public struct AsyncBufferSequence: AsyncSequence, Sendable {
+    public typealias Failure = any Swift.Error
 
-    internal typealias Element = SequenceOutput.Buffer
+    public typealias Element = SequenceOutput.Buffer
 
     @_nonSendable
-    internal struct Iterator: AsyncIteratorProtocol {
-        internal typealias Element = SequenceOutput.Buffer
+    public struct Iterator: AsyncIteratorProtocol {
+        public typealias Element = SequenceOutput.Buffer
 
         private let fileDescriptor: PlatformFileDescriptor
         private var buffer: [UInt8]
@@ -41,7 +41,7 @@ internal struct AsyncBufferSequence: AsyncSequence, Sendable {
             self.closeWhenDone = closeWhenDone
         }
 
-        internal mutating func next() async throws -> SequenceOutput.Buffer? {
+        public mutating func next() async throws -> SequenceOutput.Buffer? {
             let data = try await self.fileDescriptor.readChunk(
                 upToLength: readBufferSize
             )
@@ -64,7 +64,7 @@ internal struct AsyncBufferSequence: AsyncSequence, Sendable {
         (self.fileDescriptor, closeWhenDone) = fileDescriptor.extractPlatformDescriptor()
     }
 
-    internal func makeAsyncIterator() -> Iterator {
+    public func makeAsyncIterator() -> Iterator {
         return Iterator(fileDescriptor: fileDescriptor, closeWhenDone: closeWhenDone)
     }
 }

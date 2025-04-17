@@ -70,7 +70,7 @@ public struct Configuration: Sendable {
         error: Error,
         isolation: isolated (any Actor)? = #isolation,
         _ body: (
-            consuming Execution<Output, Error>,
+            consuming Execution,
             consuming StandardInputWriter
         ) async throws -> Result
     ) async throws -> ExecutionResult<Result> {
@@ -97,7 +97,7 @@ public struct Configuration: Sendable {
             errorWrite: errorWrite
         )
                 
-        return try await withAsyncTaskCleanupHandler(execution: execution, input: inputWrite) { execution, fd in
+        return try await withAsyncTaskCleanupHandler(execution: execution, input: inputWrite, outputRead: outputRead, errorRead: errorRead) { execution, fd, outputRead, errorRead in
             let pid = execution.processIdentifier
             async let waitingStatus = try await monitorProcessTermination(
                 forProcessWithIdentifier: pid
@@ -150,7 +150,7 @@ public struct Configuration: Sendable {
             errorWrite: errorWrite
         )
         
-        return try await withAsyncTaskCleanupHandler(execution: execution, input: inputWrite) { execution, fd in
+        return try await withAsyncTaskCleanupHandler(execution: execution, input: inputWrite, outputRead: outputRead, errorRead: errorRead) { execution, fd, outputRead, errorRead in
             // Spawn parallel tasks to monitor exit status
             // and capture outputs. Input writing must happen
             // in this scope for Span
@@ -193,7 +193,7 @@ public struct Configuration: Sendable {
             let (
                 standardOutput,
                 standardError
-            ) = try await execution.captureIOs()
+            ) = try await captureIOs(output: output, error: error, outputRead: outputRead, errorRead: errorRead)
             return CollectedResult<Output, Error>(
                 processIdentifier: pid,
                 terminationStatus: try await terminationStatus,
@@ -217,7 +217,7 @@ public struct Configuration: Sendable {
         output: Output,
         error: Error,
         isolation: isolated (any Actor)? = #isolation,
-        _ body: ((consuming Execution<Output, Error>) async throws -> Result)
+        _ body: ((consuming Execution) async throws -> Result)
     ) async throws -> ExecutionResult<Result> {
 
         let inputPipe = try PipeCreator(input)
@@ -241,7 +241,7 @@ public struct Configuration: Sendable {
             errorWrite: errorWrite
         )
         
-        return try await withAsyncTaskCleanupHandler(execution: execution, input: inputWrite) { execution, fd in
+        return try await withAsyncTaskCleanupHandler(execution: execution, input: inputWrite, outputRead: outputRead, errorRead: errorRead) { execution, fd, outputRead, errorRead in
             // Use a series of boxes to get the file descriptor into the one place we use it below. This dynamically enforces a 'once' pattern on the closure.
             let pid = execution.processIdentifier
             var fdBox: TrackedFileDescriptor?? = consume fd
@@ -277,6 +277,96 @@ public struct Configuration: Sendable {
                     }
                 }
                 return ExecutionResult(terminationStatus: status!, value: result)
+            }
+        }
+    }
+    
+#if SubprocessSpan
+    @available(SubprocessSpan, *)
+#endif
+    internal func runCaptureIO<
+        Input: InputProtocol,
+        Output: OutputProtocol,
+        Error: OutputProtocol
+    >(
+        input: Input,
+        output: Output,
+        error: Error,
+        isolation: isolated (any Actor)? = #isolation
+    ) async throws -> CollectedResult<Output, Error> {
+        
+        let inputPipe = try PipeCreator(input)
+        let outputPipe = try PipeCreator(output)
+        let errorPipe = try PipeCreator(error)
+        let inputRead = inputPipe.read
+        let inputWrite = inputPipe.write
+        let outputRead = outputPipe.read
+        let outputWrite = outputPipe.write
+        let errorRead = errorPipe.read
+        let errorWrite = errorPipe.write
+        
+        let execution = try self.spawn(
+            inputRead: inputRead,
+            inputWrite: inputWrite,
+            output: output,
+            outputRead: outputRead,
+            outputWrite: outputWrite,
+            error: error,
+            errorRead: errorRead,
+            errorWrite: errorWrite
+        )
+        
+        return try await withAsyncTaskCleanupHandler(execution: execution, input: inputWrite, outputRead: outputRead, errorRead: errorRead) { execution, fd, outputRead, errorRead in
+            // Use a series of boxes to get the file descriptor into the one place we use it below. This dynamically enforces a 'once' pattern on the closure.
+            let pid = execution.processIdentifier
+            var fdBox: TrackedFileDescriptor?? = consume fd
+            var outputReadBox : TrackedFileDescriptor? = consume outputRead
+            var errorReadBox : TrackedFileDescriptor? = consume errorRead
+            var executionBox : Execution? = consume execution
+            return try await withThrowingTaskGroup(
+                of: TerminationStatus?.self,
+                returning: CollectedResult<Output, Error>.self
+            ) { group in
+                let fdAgain = fdBox?.take()!
+                var fdBox2 : TrackedFileDescriptor?? = consume fdAgain
+                let outputRead = outputReadBox.take()!
+                let errorRead = errorReadBox.take()!
+                group.addTask {
+                    let fd = fdBox2.take()!
+                    if let fd {
+                        let writer = StandardInputWriter(fileDescriptor: fd)
+                        try await input.write(with: writer)
+                        try await writer.finish()
+                    }
+                    return nil
+                }
+                group.addTask {
+                    return try await monitorProcessTermination(
+                        forProcessWithIdentifier: pid
+                    )
+                }
+                
+                // Body runs in the same isolation
+                let execution = executionBox.take()!
+                
+                let pid = execution.processIdentifier
+                let (
+                    standardOutput,
+                    standardError
+                ) = try await captureIOs(output: output, error: error, outputRead: outputRead, errorRead: errorRead)
+                
+                var status: TerminationStatus? = nil
+                while let monitorResult = try await group.next() {
+                    if let monitorResult = monitorResult {
+                        status = monitorResult
+                    }
+                }
+                return CollectedResult(
+                    processIdentifier: pid,
+                    terminationStatus: status!,
+                    standardOutput: standardOutput,
+                    standardError: standardError
+                )
             }
         }
     }
@@ -413,15 +503,19 @@ extension Configuration {
     #if SubprocessSpan
     @available(SubprocessSpan, *)
     #endif
-    private func withAsyncTaskCleanupHandler<Result, Output: OutputProtocol, Error: OutputProtocol>(
-        execution: consuming Execution<Output, Error>,
+    private func withAsyncTaskCleanupHandler<Result>(
+        execution: consuming Execution,
         input: consuming TrackedFileDescriptor?,
-        _ body: (consuming Execution<Output, Error>, consuming TrackedFileDescriptor?) async throws -> Result,
+        outputRead: consuming TrackedFileDescriptor?,
+        errorRead: consuming TrackedFileDescriptor?,
+        _ body: (consuming Execution, consuming TrackedFileDescriptor?, consuming TrackedFileDescriptor?, consuming TrackedFileDescriptor?) async throws -> Result,
         isolation: isolated (any Actor)? = #isolation
     ) async rethrows -> Result {
         let pid = execution.processIdentifier
-        var executionBox : Execution<Output, Error>? = consume execution
+        var executionBox : Execution? = consume execution
         var inputBox : TrackedFileDescriptor?? = consume input
+        var outputReadBox : TrackedFileDescriptor?? = consume outputRead
+        var errorReadBox : TrackedFileDescriptor?? = consume errorRead
         return try await withThrowingTaskGroup(
             of: Void.self,
             returning: Result.self
@@ -436,7 +530,7 @@ extension Configuration {
                 // Attempt to terminate the child process
                 // Since the task has already been cancelled,
                 // this is the best we can do
-                await Execution<Output, Error>.teardown(
+                await Execution.teardown(
                     processIdentifier: pid,
                     using: self.platformOptions.teardownSequence
                 )
@@ -446,11 +540,13 @@ extension Configuration {
                 // Unwrap from the box, which enforces that the closure is run only once
                 let execution = executionBox.take()!
                 let input = inputBox.take()!
-                let result = try await body(execution, input)
+                let outputRead = outputReadBox.take()!
+                let errorRead = errorReadBox.take()!
+                let result = try await body(execution, input, outputRead, errorRead)
                 group.cancelAll()
                 return result
             } catch {
-                await Execution<Output, Error>.teardown(
+                await Execution.teardown(
                     processIdentifier: pid,
                     using: self.platformOptions.teardownSequence
                 )

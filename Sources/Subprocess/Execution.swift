@@ -33,18 +33,12 @@ import WinSDK
 #if SubprocessSpan
 @available(SubprocessSpan, *)
 #endif
-public struct Execution<
-    Output: OutputProtocol,
-    Error: OutputProtocol
->: Sendable, ~Copyable {
+public struct Execution: Sendable, ~Copyable/*, ~Escapable*/ {
+    //internal struct Lifetime: ~Copyable { }
+    
     /// The process identifier of the current execution
     public let processIdentifier: ProcessIdentifier
 
-    internal let output: Output
-    internal let error: Error
-    internal var outputRead: TrackedFileDescriptor?
-    internal var errorRead: TrackedFileDescriptor?
-    
     #if os(Windows)
     internal let consoleBehavior: PlatformOptions.ConsoleBehavior
 
@@ -64,22 +58,17 @@ public struct Execution<
         self.consoleBehavior = consoleBehavior
     }
     #else
+    //@lifetime(borrow lifetime)
     init(
-        processIdentifier: ProcessIdentifier,
-        output: Output,
-        error: Error,
-        outputRead: consuming TrackedFileDescriptor?,
-        errorRead: consuming TrackedFileDescriptor?,
+        //lifetime: borrowing Lifetime,
+        processIdentifier: ProcessIdentifier
     ) {
         self.processIdentifier = processIdentifier
-        self.output = output
-        self.error = error
-        self.outputRead = consume outputRead
-        self.errorRead = consume errorRead
     }
     #endif  // os(Windows)
 }
 
+/*
 #if SubprocessSpan
 @available(SubprocessSpan, *)
 #endif
@@ -119,6 +108,7 @@ extension Execution where Error == SequenceOutput {
         }
     }
 }
+*/
 
 // MARK: - Output Capture
 internal enum OutputCapturingState<Output: Sendable, Error: Sendable>: Sendable {
@@ -131,52 +121,49 @@ internal typealias CapturedIOs<
     Error: Sendable
 > = (standardOutput: Output, standardError: Error)
 
+
 #if SubprocessSpan
 @available(SubprocessSpan, *)
 #endif
-extension Execution {
-    /// Consume the output read and error read file descriptors, turning them into the stdout/stderrr types.
-    consuming internal func captureIOs() async throws -> CapturedIOs<
-        Output.OutputType, Error.OutputType
-    > {
-        let standardOutput = output
-        let standardError = error
-        
-        // Wrap the ~Copyable file descriptors in an Optional so we can pass them to a closure which executes once. There is no way to tell the compiler that the closure is only executed once, so this moves that check to a dynamic one (at the force unwrap below).
-        var readR : TrackedFileDescriptor? = outputRead
-        var errorR : TrackedFileDescriptor? = errorRead
-        self = .init(processIdentifier: processIdentifier, output: output, error: error, outputRead: nil, errorRead: nil)
-        return try await withThrowingTaskGroup(
-            of: OutputCapturingState<Output.OutputType, Error.OutputType>.self
-        ) { group in
-            // 2nd layer of moving noncopyable types into a wrapper type
-            var readRR = readR.take()
-            var errorRR = errorR.take()
-            group.addTask {
-                let r = readRR.take()!
-                let stdout = try await standardOutput.captureOutput(from: r)
-                return .standardOutputCaptured(stdout)
-            }
-            group.addTask {
-                let e = errorRR.take()!
-                let stderr = try await standardError.captureOutput(from: e)
-                return .standardErrorCaptured(stderr)
-            }
-
-            var stdout: Output.OutputType!
-            var stderror: Error.OutputType!
-            while let state = try await group.next() {
-                switch state {
-                case .standardOutputCaptured(let output):
-                    stdout = output
-                case .standardErrorCaptured(let error):
-                    stderror = error
-                }
-            }
-            return (
-                standardOutput: stdout,
-                standardError: stderror
-            )
+internal func captureIOs<Output : OutputProtocol, Error: OutputProtocol>(output: Output, error: Error, outputRead: consuming TrackedFileDescriptor?, errorRead: consuming TrackedFileDescriptor?) async throws -> CapturedIOs<
+    Output.OutputType, Error.OutputType
+> {
+    let standardOutput = output
+    let standardError = error
+    
+    // Wrap the ~Copyable file descriptors in an Optional so we can pass them to a closure which executes once. There is no way to tell the compiler that the closure is only executed once, so this moves that check to a dynamic one (at the force unwrap below).
+    var readR : TrackedFileDescriptor?? = outputRead
+    var errorR : TrackedFileDescriptor?? = errorRead
+    return try await withThrowingTaskGroup(
+        of: OutputCapturingState<Output.OutputType, Error.OutputType>.self
+    ) { group in
+        // 2nd layer of moving noncopyable types into a wrapper type
+        var readRR = readR.take()!
+        var errorRR = errorR.take()!
+        group.addTask {
+            let r = readRR.take()!
+            let stdout = try await standardOutput.captureOutput(from: r)
+            return .standardOutputCaptured(stdout)
         }
+        group.addTask {
+            let e = errorRR.take()!
+            let stderr = try await standardError.captureOutput(from: e)
+            return .standardErrorCaptured(stderr)
+        }
+
+        var stdout: Output.OutputType!
+        var stderror: Error.OutputType!
+        while let state = try await group.next() {
+            switch state {
+            case .standardOutputCaptured(let output):
+                stdout = output
+            case .standardErrorCaptured(let error):
+                stderror = error
+            }
+        }
+        return (
+            standardOutput: stdout,
+            standardError: stderror
+        )
     }
 }
