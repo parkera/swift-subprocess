@@ -1024,7 +1024,7 @@ extension FileDescriptor {
         return HANDLE(bitPattern: _get_osfhandle(self.rawValue))!
     }
 
-    internal func readChunk(upToLength maxLength: Int) async throws -> SequenceOutput.Buffer? {
+    internal func readChunk(upToLength maxLength: Int) async throws -> AsyncBufferSequence.Buffer? {
         return try await withCheckedThrowingContinuation { continuation in
             self.readUntilEOF(
                 upToLength: maxLength
@@ -1033,7 +1033,7 @@ extension FileDescriptor {
                 case .failure(let error):
                     continuation.resume(throwing: error)
                 case .success(let bytes):
-                    continuation.resume(returning: SequenceOutput.Buffer(data: bytes))
+                    continuation.resume(returning: AsyncBufferSequence.Buffer(data: bytes))
                 }
             }
         }

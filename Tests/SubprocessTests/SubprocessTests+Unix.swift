@@ -608,7 +608,7 @@ extension SubprocessUnixTests {
             #expect(typedError == .badFileDescriptor)
         }
     }
-
+    
     @Test func testRedirectedOutputRedirectToSequence() async throws {
         guard #available(SubprocessSpan , *) else {
             return
@@ -629,6 +629,7 @@ extension SubprocessUnixTests {
                 let currentChunk = chunk._withUnsafeBytes { Data($0) }
                 buffer += currentChunk
             }
+            await execution.teardown(using: [])
             return buffer
         }
         #expect(catResult.terminationStatus.isSuccess)

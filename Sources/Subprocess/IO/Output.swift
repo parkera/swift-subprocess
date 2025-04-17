@@ -159,26 +159,6 @@ public struct BytesOutput: OutputProtocol {
     public typealias OutputType = [UInt8]
     public let maxSize: Int
 
-    internal func captureOutput(from fileDescriptor: consuming TrackedFileDescriptor) async throws -> [UInt8] {
-        return try await withCheckedThrowingContinuation { continuation in
-            fileDescriptor.platformDescriptor.readUntilEOF(upToLength: self.maxSize) { result in
-                switch result {
-                case .success(let data):
-                    // FIXME: remove workaround for
-                    // rdar://143992296
-                    // https://github.com/swiftlang/swift-subprocess/issues/3
-                    #if os(Windows)
-                    continuation.resume(returning: data)
-                    #else
-                    continuation.resume(returning: data.array())
-                    #endif
-                case .failure(let error):
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
-    }
-
     #if SubprocessSpan
     public func output(from span: RawSpan) throws -> [UInt8] {
         fatalError("Not implemented")
@@ -293,51 +273,10 @@ extension OutputProtocol {
 }
 #endif
 
-// MARK: - Default Implementations
-#if SubprocessSpan
-@available(SubprocessSpan, *)
-#endif
-extension OutputProtocol {
-    /// Capture the output from the subprocess up to maxSize
-    @_disfavoredOverload
-    internal func captureOutput(
-        from fileDescriptor: consuming TrackedFileDescriptor
-    ) async throws -> OutputType {
-        if let bytesOutput = self as? BytesOutput {
-            return try await bytesOutput.captureOutput(from: fileDescriptor) as! Self.OutputType
-        }
-        return try await withCheckedThrowingContinuation { continuation in
-            if OutputType.self == Void.self {
-                continuation.resume(returning: () as! OutputType)
-                return
-            }
-
-            fileDescriptor.platformDescriptor.readUntilEOF(upToLength: self.maxSize) { result in
-                do {
-                    switch result {
-                    case .success(let data):
-                        // FIXME: remove workaround for
-                        // rdar://143992296
-                        // https://github.com/swiftlang/swift-subprocess/issues/3
-                        let output = try self.output(from: data)
-                        continuation.resume(returning: output)
-                    case .failure(let error):
-                        continuation.resume(throwing: error)
-                    }
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
-    }
-}
-
 #if SubprocessSpan
 @available(SubprocessSpan, *)
 #endif
 extension OutputProtocol where OutputType == Void {
-    internal func captureOutput(from fileDescriptor: consuming TrackedFileDescriptor?) async throws {}
-
     #if SubprocessSpan
     /// Convert the output from Data to expected output type
     public func output(from span: RawSpan) throws {

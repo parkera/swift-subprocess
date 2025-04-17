@@ -142,12 +142,12 @@ internal func captureIOs<Output : OutputProtocol, Error: OutputProtocol>(output:
         var errorRR = errorR.take()!
         group.addTask {
             let r = readRR.take()!
-            let stdout = try await standardOutput.captureOutput(from: r)
+            let stdout = try await captureOutput(standardOutput, from: r)
             return .standardOutputCaptured(stdout)
         }
         group.addTask {
             let e = errorRR.take()!
-            let stderr = try await standardError.captureOutput(from: e)
+            let stderr = try await captureOutput(standardError, from: e)
             return .standardErrorCaptured(stderr)
         }
 
@@ -165,5 +165,62 @@ internal func captureIOs<Output : OutputProtocol, Error: OutputProtocol>(output:
             standardOutput: stdout,
             standardError: stderror
         )
+    }
+}
+
+
+#if SubprocessSpan
+@available(SubprocessSpan, *)
+#endif
+private func captureOutput<Output : OutputProtocol>(_ output: Output, from fileDescriptor: borrowing TrackedFileDescriptor) async throws -> Output.OutputType where Output.OutputType == Void {
+    return try await withCheckedThrowingContinuation { continuation in
+        continuation.resume(returning: ())
+    }
+}
+
+#if SubprocessSpan
+@available(SubprocessSpan, *)
+#endif
+private func captureOutput<Output : OutputProtocol>(_ output: Output, from fileDescriptor: borrowing TrackedFileDescriptor) async throws -> Output.OutputType {
+    return try await withCheckedThrowingContinuation { continuation in
+        fileDescriptor.platformDescriptor.readUntilEOF(upToLength: output.maxSize) { result in
+            do {
+                switch result {
+                case .success(let data):
+                    // FIXME: remove workaround for
+                    // rdar://143992296
+                    // https://github.com/swiftlang/swift-subprocess/issues/3
+                    let output = try output.output(from: data)
+                    continuation.resume(returning: output)
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+}
+
+#if SubprocessSpan
+@available(SubprocessSpan, *)
+#endif
+private func captureOutput(_ output: BytesOutput, from fileDescriptor: borrowing TrackedFileDescriptor) async throws -> [UInt8] {
+    return try await withCheckedThrowingContinuation { continuation in
+        fileDescriptor.platformDescriptor.readUntilEOF(upToLength: output.maxSize) { result in
+            switch result {
+            case .success(let data):
+                // FIXME: remove workaround for
+                // rdar://143992296
+                // https://github.com/swiftlang/swift-subprocess/issues/3
+                #if os(Windows)
+                continuation.resume(returning: data)
+                #else
+                continuation.resume(returning: data.array())
+                #endif
+            case .failure(let error):
+                continuation.resume(throwing: error)
+            }
+        }
     }
 }
