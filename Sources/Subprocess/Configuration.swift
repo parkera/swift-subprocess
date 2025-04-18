@@ -76,9 +76,9 @@ public struct Configuration: Sendable {
     ) async throws -> ExecutionResult<Result> {
         let input = CustomWriteInput()
 
-        let inputPipe = try PipeCreator(input)
-        let outputPipe = try PipeCreator(output)
-        let errorPipe = try PipeCreator(error)
+        let inputPipe = try InputPipeCreator(input)
+        let outputPipe = try OutputPipeCreator(output)
+        let errorPipe = try OutputPipeCreator(error)
         let inputRead = inputPipe.read
         let inputWrite = inputPipe.write
         let outputRead = outputPipe.read
@@ -127,9 +127,9 @@ public struct Configuration: Sendable {
     ) async throws -> CollectedResult<Output, Error> {
         let writerInput = CustomWriteInput()
 
-        let inputPipe = try PipeCreator(writerInput)
-        let outputPipe = try PipeCreator(output)
-        let errorPipe = try PipeCreator(error)
+        let inputPipe = try InputPipeCreator(writerInput)
+        let outputPipe = try OutputPipeCreator(output)
+        let errorPipe = try OutputPipeCreator(error)
         let inputRead = inputPipe.read
         let inputWrite = inputPipe.write
         let outputRead = outputPipe.read
@@ -205,20 +205,16 @@ public struct Configuration: Sendable {
     #endif
     internal func run<
         Result,
-        Input: InputProtocol,
-        Output: OutputProtocol,
-        Error: OutputProtocol
+        Input: InputProtocol
     >(
         input: Input,
-        output: Output,
-        error: Error,
+        outputPipe: consuming OutputPipeCreator,
+        errorPipe: consuming OutputPipeCreator,
         isolation: isolated (any Actor)? = #isolation,
-        _ body: ((consuming Execution) async throws -> Result)
+        _ body: ((consuming Execution, consuming TrackedFileDescriptor, consuming TrackedFileDescriptor) async throws -> Result)
     ) async throws -> ExecutionResult<Result> {
 
-        let inputPipe = try PipeCreator(input)
-        let outputPipe = try PipeCreator(output)
-        let errorPipe = try PipeCreator(error)
+        let inputPipe = try InputPipeCreator(input)
         let inputRead = inputPipe.read
         let inputWrite = inputPipe.write
         let outputRead = outputPipe.read
@@ -263,7 +259,7 @@ public struct Configuration: Sendable {
 
                 // Body runs in the same isolation
                 let execution = executionBox.take()!
-                let result = try await body(execution)
+                let result = try await body(execution, outputRead, outputWrite)
                 var status: TerminationStatus? = nil
                 while let monitorResult = try await group.next() {
                     if let monitorResult = monitorResult {
@@ -289,9 +285,9 @@ public struct Configuration: Sendable {
         isolation: isolated (any Actor)? = #isolation
     ) async throws -> CollectedResult<Output, Error> {
         
-        let inputPipe = try PipeCreator(input)
-        let outputPipe = try PipeCreator(output)
-        let errorPipe = try PipeCreator(error)
+        let inputPipe = try InputPipeCreator(input)
+        let outputPipe = try OutputPipeCreator(output)
+        let errorPipe = try OutputPipeCreator(error)
         let inputRead = inputPipe.read
         let inputWrite = inputPipe.write
         let outputRead = outputPipe.read
@@ -962,77 +958,63 @@ public enum QualityOfService: Int, Sendable {
     case `default` = -1
 }
 
-internal struct PipeCreator : ~Copyable {
+private func devNull() throws -> TrackedFileDescriptor? {
+#if os(Windows)
+    // On Windows, instead of binding to dev null,
+    // we don't set the input handle in the `STARTUPINFOW`
+    // to signal no input
+    return nil
+#else
+    let devnull: FileDescriptor = try .openDevNull(withAcessMode: .readOnly)
+    return TrackedFileDescriptor(devnull, closeWhenDone: true)
+#endif
+}
+
+internal struct InputPipeCreator : ~Copyable {
     let read: TrackedFileDescriptor?
     let write: TrackedFileDescriptor?
     
     /// A pipe, Customized for the `NoInput` type.
     init(_ i: NoInput) throws {
-        // work around "Conditional initialization or destruction of noncopyable types is not supported"
-        let r: TrackedFileDescriptor?
-        let w: TrackedFileDescriptor?
-        
-        r = try i.createReadFileDescriptor()
-        w = try i.createWriteFileDescriptor()
-        
-        read = r
-        write = w
+        read = try devNull()
+        write = nil
     }
     
     /// A pipe, Customized for the `FileDescriptorInput` type.
     init(_ i: FileDescriptorInput) throws {
-        let r: TrackedFileDescriptor?
-        let w: TrackedFileDescriptor?
-        
-        r = try i.createReadFileDescriptor()
-        w = try i.createWriteFileDescriptor()
-        
-        read = r
-        write = w
-    }
-    
-    #if SubprocessSpan
-    @available(SubprocessSpan, *)
-    #endif
-    /// A pipe, Customized for the `DiscardedOutput` type.
-    init(_ i: FileDescriptorOutput) throws {
-        let r: TrackedFileDescriptor?
-        let w: TrackedFileDescriptor?
-        
-        r = try i.createReadFileDescriptor()
-        w = try i.createWriteFileDescriptor()
-        
-        read = r
-        write = w
-    }
-
-    #if SubprocessSpan
-    @available(SubprocessSpan, *)
-    #endif
-    /// A pipe, Customized for the `DiscardedOutput` type.
-    init(_ i: DiscardedOutput) throws {
-        let r: TrackedFileDescriptor?
-        let w: TrackedFileDescriptor?
-        
-        r = try i.createReadFileDescriptor()
-        w = try i.createWriteFileDescriptor()
-        
-        read = r
-        write = w
+        read = try devNull()
+        write = nil
     }
     
     /// A pipe for any other input type.
-    init<I: InputProtocol>(_ i: I) throws {
-        let pipe = try FileDescriptor.ssp_pipe()
+    init<In: InputProtocol>(_ i: In) throws {
+        let pipe = try FileDescriptor.pipe()
         read = TrackedFileDescriptor(pipe.readEnd, closeWhenDone: true)
         write = TrackedFileDescriptor(pipe.writeEnd, closeWhenDone: true)
     }
-    
-    #if SubprocessSpan
-    @available(SubprocessSpan, *)
-    #endif
+}
+
+#if SubprocessSpan
+@available(SubprocessSpan, *)
+#endif
+internal struct OutputPipeCreator : ~Copyable {
+    let read: TrackedFileDescriptor?
+    let write: TrackedFileDescriptor?
+        
+    /// A pipe, Customized for the `FileDescriptorOutput` type.
+    init(_ i: FileDescriptorOutput) throws {
+        read = nil
+        write = TrackedFileDescriptor(i.fileDescriptor, closeWhenDone: i.closeAfterSpawningProcess)
+    }
+
+    /// A pipe, Customized for the `DiscardedOutput` type.
+    init(_ i: DiscardedOutput) throws {
+        read = try devNull()
+        write = nil
+    }
+
     /// A pipe for any other output type.
-    init<I: OutputProtocol>(_ i: I) throws {
+    init<Out: OutputProtocol>(_ out: Out) throws {
         let pipe = try FileDescriptor.ssp_pipe()
         read = TrackedFileDescriptor(pipe.readEnd, closeWhenDone: true)
         write = TrackedFileDescriptor(pipe.writeEnd, closeWhenDone: true)

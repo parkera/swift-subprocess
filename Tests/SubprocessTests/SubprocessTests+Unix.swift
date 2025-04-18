@@ -429,12 +429,10 @@ extension SubprocessUnixTests {
         let result = try await Subprocess.run(
             .path("/bin/cat"),
             input: .data(expected),
-            output: .sequence,
             error: .discarded
-        ) { execution in
-            var execution = execution
+        ) { execution, standardOutput in
             var buffer = Data()
-            for try await chunk in execution.standardOutput {
+            for try await chunk in standardOutput {
                 let currentChunk = chunk._withUnsafeBytes { Data($0) }
                 buffer += currentChunk
             }
@@ -470,12 +468,10 @@ extension SubprocessUnixTests {
         let result = try await Subprocess.run(
             .path("/bin/cat"),
             input: .sequence(stream),
-            output: .sequence,
             error: .discarded
-        ) { execution in
-            var execution = execution
+        ) { execution, standardOutput in
             var buffer = Data()
-            for try await chunk in execution.standardOutput {
+            for try await chunk in standardOutput {
                 let currentChunk = chunk._withUnsafeBytes { Data($0) }
                 buffer += currentChunk
             }
@@ -620,12 +616,10 @@ extension SubprocessUnixTests {
         let catResult = try await Subprocess.run(
             .path("/bin/cat"),
             arguments: [theMysteriousIsland.string],
-            output: .sequence,
             error: .discarded
-        ) { execution in
-            var execution = execution
+        ) { execution, standardOutput in
             var buffer = Data()
-            for try await chunk in execution.standardOutput {
+            for try await chunk in standardOutput {
                 let currentChunk = chunk._withUnsafeBytes { Data($0) }
                 buffer += currentChunk
             }
@@ -820,18 +814,15 @@ extension SubprocessUnixTests {
                 """,
             ],
             input: .none,
-            output: .sequence,
             error: .discarded
-        ) { subprocess in
-            var subprocess: Execution<SequenceOutput, DiscardedOutput>? = subprocess
+        ) { subprocess, standardOutput in
+            var subprocessBoxBox: Execution? = subprocess
             return try await withThrowingTaskGroup(of: Void.self) { group in
-                var subprocess = subprocess.take()!
-                let stdOut = subprocess.standardOutput
-                var box : Execution? = subprocess
+                var subprocessBox: Execution? = subprocessBoxBox.take()!
                 group.addTask {
-                    let subprocess = box.take()!
                     try await Task.sleep(for: .milliseconds(200))
                     // Send shut down signal
+                    let subprocess = subprocessBox.take()!
                     await subprocess.teardown(using: [
                         .send(signal: .quit, allowedDurationToNextStep: .milliseconds(500)),
                         .send(signal: .terminate, allowedDurationToNextStep: .milliseconds(500)),
@@ -840,7 +831,7 @@ extension SubprocessUnixTests {
                 }
                 group.addTask {
                     var outputs: [String] = []
-                    for try await bit in stdOut {
+                    for try await bit in standardOutput {
                         let bitString = bit._withUnsafeBytes { ptr in
                             return String(decoding: ptr, as: UTF8.self)
                         }.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -157,9 +157,9 @@ extension Configuration {
     @available(SubprocessSpan, *)
     #endif
     internal func detachedSpawn(
-        inputPipe: consuming PipeCreator,
-        outputPipe: consuming PipeCreator,
-        errorPipe: consuming PipeCreator
+        inputPipe: consuming InputPipeCreator,
+        outputPipe: consuming OutputPipeCreator,
+        errorPipe: consuming OutputPipeCreator
     ) throws -> ProcessIdentifier {
         let inputRead = inputPipe.read
         let inputWrite = inputPipe.write

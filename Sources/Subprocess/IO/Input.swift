@@ -43,22 +43,6 @@ public protocol InputProtocol: Sendable {
 /// to `/dev/null`, while on Windows, it does not bind any
 /// file handle to the subprocess standard input handle.
 public struct NoInput: InputProtocol {
-    internal func createReadFileDescriptor() throws -> TrackedFileDescriptor? {
-#if os(Windows)
-        // On Windows, instead of binding to dev null,
-        // we don't set the input handle in the `STARTUPINFOW`
-        // to signal no input
-        return nil
-#else
-        let devnull: FileDescriptor = try .openDevNull(withAcessMode: .readOnly)
-        return TrackedFileDescriptor(devnull, closeWhenDone: true)
-#endif
-    }
-    
-    internal func createWriteFileDescriptor() throws -> TrackedFileDescriptor? {
-        nil
-    }
-
     public func write(with writer: borrowing StandardInputWriter) async throws {
         // noop
     }
@@ -74,14 +58,6 @@ public struct NoInput: InputProtocol {
 public struct FileDescriptorInput: InputProtocol {
     private let fileDescriptor: FileDescriptor
     private let closeAfterSpawningProcess: Bool
-
-    internal func createReadFileDescriptor() throws -> TrackedFileDescriptor? {
-        TrackedFileDescriptor(fileDescriptor, closeWhenDone: closeAfterSpawningProcess)
-    }
-
-    internal func createWriteFileDescriptor() throws -> TrackedFileDescriptor? {
-        nil
-    }
     
     public func write(with writer: borrowing StandardInputWriter) async throws {
         // noop

@@ -61,22 +61,6 @@ extension OutputProtocol {
 public struct DiscardedOutput: OutputProtocol {
     public typealias OutputType = Void
 
-    internal func createReadFileDescriptor() throws -> TrackedFileDescriptor? {
-        #if os(Windows)
-        // On Windows, instead of binding to dev null,
-        // we don't set the input handle in the `STARTUPINFOW`
-        // to signal no output
-        return nil
-        #else
-        let devnull: FileDescriptor = try .openDevNull(withAcessMode: .readOnly)
-        return TrackedFileDescriptor(devnull, closeWhenDone: true)
-        #endif
-    }
-    
-    internal func createWriteFileDescriptor() throws -> TrackedFileDescriptor? {
-        nil
-    }
-
     internal init() {}
 }
 
@@ -91,19 +75,9 @@ public struct DiscardedOutput: OutputProtocol {
 public struct FileDescriptorOutput: OutputProtocol {
     public typealias OutputType = Void
 
-    private let closeAfterSpawningProcess: Bool
-    private let fileDescriptor: FileDescriptor
+    internal let closeAfterSpawningProcess: Bool
+    internal let fileDescriptor: FileDescriptor
 
-    internal func createReadFileDescriptor() throws -> TrackedFileDescriptor? {
-        nil
-    }
-    
-    internal func createWriteFileDescriptor() throws -> TrackedFileDescriptor? {
-        TrackedFileDescriptor(
-            fileDescriptor,
-            closeWhenDone: closeAfterSpawningProcess
-        )
-    }
 
     internal init(
         fileDescriptor: FileDescriptor,

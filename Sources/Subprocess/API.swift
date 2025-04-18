@@ -134,6 +134,10 @@ public func run<Result, Input: InputProtocol, Output: OutputProtocol, Error: Out
     isolation: isolated (any Actor)? = #isolation,
     body: ((consuming Execution) async throws -> Result)
 ) async throws -> ExecutionResult<Result> where Output.OutputType == Void, Error.OutputType == Void {
+    let inputPipe = try InputPipeCreator(input)
+    let outputPipe = try OutputPipeCreator(output)
+    let errorPipe = try OutputPipeCreator(error)
+
     return try await Configuration(
         executable: executable,
         arguments: arguments,
@@ -141,7 +145,9 @@ public func run<Result, Input: InputProtocol, Output: OutputProtocol, Error: Out
         workingDirectory: workingDirectory,
         platformOptions: platformOptions
     )
-    .run(input: input, output: output, error: error, body)
+    .run(input: input, outputPipe: outputPipe, errorPipe: errorPipe) { execution, outputRead, errorRead in
+        return try await body(execution)
+    }
 }
 
 /// TODO: Docs
@@ -160,6 +166,8 @@ public func run<Result, Input: InputProtocol, Error: OutputProtocol>(
     isolation: isolated (any Actor)? = #isolation,
     body: ((consuming Execution, AsyncBufferSequence) async throws -> Result)
 ) async throws -> ExecutionResult<Result> where Error.OutputType == Void {
+    let outputPipe = try OutputPipeCreator(DummyOutput())
+    let errorPipe = try OutputPipeCreator(error)
     return try await Configuration(
         executable: executable,
         arguments: arguments,
@@ -167,7 +175,14 @@ public func run<Result, Input: InputProtocol, Error: OutputProtocol>(
         workingDirectory: workingDirectory,
         platformOptions: platformOptions
     )
-    .run(input: input, output: output, error: error, body)
+    .run(input: input, outputPipe: outputPipe, errorPipe: errorPipe) { execution, outputRead, errorRead in
+        let seq = AsyncBufferSequence(fileDescriptor: outputRead)
+        return try await body(execution, seq)
+    }
+}
+
+struct DummyOutput : OutputProtocol {
+    typealias OutputType = Void
 }
 
 /// TODO: Docs
@@ -175,17 +190,19 @@ public func run<Result, Input: InputProtocol, Error: OutputProtocol>(
 #if SubprocessSpan
 @available(SubprocessSpan, *)
 #endif
-public func run<Result, Input: InputProtocol, Error: OutputProtocol>(
+public func run<Result, Input: InputProtocol, Output: OutputProtocol>(
     _ executable: Executable,
     arguments: Arguments = [],
     environment: Environment = .inherit,
     workingDirectory: FilePath? = nil,
     platformOptions: PlatformOptions = PlatformOptions(),
     input: Input = .none,
-    error: Error,
+    output: Output,
     isolation: isolated (any Actor)? = #isolation,
     body: ((consuming Execution, AsyncBufferSequence) async throws -> Result)
-) async throws -> ExecutionResult<Result> where Error.OutputType == Void {
+) async throws -> ExecutionResult<Result> where Output.OutputType == Void {
+    let outputPipe = try OutputPipeCreator(output)
+    let errorPipe = try OutputPipeCreator(DummyOutput())
     return try await Configuration(
         executable: executable,
         arguments: arguments,
@@ -193,7 +210,10 @@ public func run<Result, Input: InputProtocol, Error: OutputProtocol>(
         workingDirectory: workingDirectory,
         platformOptions: platformOptions
     )
-    .run(input: input, output: output, error: error, body)
+    .run(input: input, outputPipe: outputPipe, errorPipe: errorPipe) { execution, outputRead, errorRead in
+        let seq = AsyncBufferSequence(fileDescriptor: errorRead)
+        return try await body(execution, seq)
+    }
 }
 
 /// TODO: Docs
@@ -211,6 +231,8 @@ public func run<Result, Input: InputProtocol>(
     isolation: isolated (any Actor)? = #isolation,
     body: ((consuming Execution, AsyncBufferSequence, AsyncBufferSequence) async throws -> Result)
 ) async throws -> ExecutionResult<Result> {
+    let outputPipe = try OutputPipeCreator(DummyOutput())
+    let errorPipe = try OutputPipeCreator(DummyOutput())
     return try await Configuration(
         executable: executable,
         arguments: arguments,
@@ -218,7 +240,11 @@ public func run<Result, Input: InputProtocol>(
         workingDirectory: workingDirectory,
         platformOptions: platformOptions
     )
-    .run(input: input, output: output, error: error, body)
+    .run(input: input, outputPipe: outputPipe, errorPipe: errorPipe)  { execution, outputRead, errorRead in
+        let outputSequence = AsyncBufferSequence(fileDescriptor: outputRead)
+        let errorSequence = AsyncBufferSequence(fileDescriptor: errorRead)
+        return try await body(execution, outputSequence, errorSequence)
+    }
 }
 
 /// Run a executable with given parameters and a custom closure
@@ -385,9 +411,9 @@ public func runDetached(
         let processError = DiscardedOutput()
         
         return try configuration.detachedSpawn(
-            inputPipe: PipeCreator(processInput),
-            outputPipe: PipeCreator(processOutput),
-            errorPipe: PipeCreator(processError)
+            inputPipe: InputPipeCreator(processInput),
+            outputPipe: OutputPipeCreator(processOutput),
+            errorPipe: OutputPipeCreator(processError)
         )
     case (.none, .none, .some(let errorFd)):
         let processInput = NoInput()
@@ -395,9 +421,9 @@ public func runDetached(
         let processError = FileDescriptorOutput(fileDescriptor: errorFd, closeAfterSpawningProcess: false)
         
         return try configuration.detachedSpawn(
-            inputPipe: PipeCreator(processInput),
-            outputPipe: PipeCreator(processOutput),
-            errorPipe: PipeCreator(processError)
+            inputPipe: InputPipeCreator(processInput),
+            outputPipe: OutputPipeCreator(processOutput),
+            errorPipe: OutputPipeCreator(processError)
         )
     case (.none, .some(let outputFd), .none):
         let processInput = NoInput()
@@ -405,9 +431,9 @@ public func runDetached(
         let processError = DiscardedOutput()
         
         return try configuration.detachedSpawn(
-            inputPipe: PipeCreator(processInput),
-            outputPipe: PipeCreator(processOutput),
-            errorPipe: PipeCreator(processError)
+            inputPipe: InputPipeCreator(processInput),
+            outputPipe: OutputPipeCreator(processOutput),
+            errorPipe: OutputPipeCreator(processError)
         )
     case (.none, .some(let outputFd), .some(let errorFd)):
         let processInput = NoInput()
@@ -421,9 +447,9 @@ public func runDetached(
         )
         
         return try configuration.detachedSpawn(
-            inputPipe: PipeCreator(processInput),
-            outputPipe: PipeCreator(processOutput),
-            errorPipe: PipeCreator(processError)
+            inputPipe: InputPipeCreator(processInput),
+            outputPipe: OutputPipeCreator(processOutput),
+            errorPipe: OutputPipeCreator(processError)
         )
     case (.some(let inputFd), .none, .none):
         let processInput = FileDescriptorInput(
@@ -434,9 +460,9 @@ public func runDetached(
         let processError = DiscardedOutput()
         
         return try configuration.detachedSpawn(
-            inputPipe: PipeCreator(processInput),
-            outputPipe: PipeCreator(processOutput),
-            errorPipe: PipeCreator(processError)
+            inputPipe: InputPipeCreator(processInput),
+            outputPipe: OutputPipeCreator(processOutput),
+            errorPipe: OutputPipeCreator(processError)
         )
     case (.some(let inputFd), .none, .some(let errorFd)):
         let processInput = FileDescriptorInput(
@@ -450,9 +476,9 @@ public func runDetached(
         )
         
         return try configuration.detachedSpawn(
-            inputPipe: PipeCreator(processInput),
-            outputPipe: PipeCreator(processOutput),
-            errorPipe: PipeCreator(processError)
+            inputPipe: InputPipeCreator(processInput),
+            outputPipe: OutputPipeCreator(processOutput),
+            errorPipe: OutputPipeCreator(processError)
         )
     case (.some(let inputFd), .some(let outputFd), .none):
         let processInput = FileDescriptorInput(
@@ -466,9 +492,9 @@ public func runDetached(
         let processError = DiscardedOutput()
         
         return try configuration.detachedSpawn(
-            inputPipe: PipeCreator(processInput),
-            outputPipe: PipeCreator(processOutput),
-            errorPipe: PipeCreator(processError)
+            inputPipe: InputPipeCreator(processInput),
+            outputPipe: OutputPipeCreator(processOutput),
+            errorPipe: OutputPipeCreator(processError)
         )
     case (.some(let inputFd), .some(let outputFd), .some(let errorFd)):
         let processInput = FileDescriptorInput(
@@ -485,9 +511,9 @@ public func runDetached(
         )
         
         return try configuration.detachedSpawn(
-            inputPipe: PipeCreator(processInput),
-            outputPipe: PipeCreator(processOutput),
-            errorPipe: PipeCreator(processError)
+            inputPipe: InputPipeCreator(processInput),
+            outputPipe: OutputPipeCreator(processOutput),
+            errorPipe: OutputPipeCreator(processError)
         )
     }
 }
