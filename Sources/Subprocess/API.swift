@@ -134,7 +134,6 @@ public func run<Result, Input: InputProtocol, Output: OutputProtocol, Error: Out
     isolation: isolated (any Actor)? = #isolation,
     body: ((consuming Execution) async throws -> Result)
 ) async throws -> ExecutionResult<Result> where Output.OutputType == Void, Error.OutputType == Void {
-    let inputPipe = try InputPipeCreator(input)
     let outputPipe = try OutputPipeCreator(output)
     let errorPipe = try OutputPipeCreator(error)
 
@@ -176,7 +175,8 @@ public func run<Result, Input: InputProtocol, Error: OutputProtocol>(
         platformOptions: platformOptions
     )
     .run(input: input, outputPipe: outputPipe, errorPipe: errorPipe) { execution, outputRead, errorRead in
-        let seq = AsyncBufferSequence(fileDescriptor: outputRead)
+        // TODO: Deal with force unwrap
+        let seq = AsyncBufferSequence(fileDescriptor: outputRead!)
         return try await body(execution, seq)
     }
 }
@@ -211,7 +211,7 @@ public func run<Result, Input: InputProtocol, Output: OutputProtocol>(
         platformOptions: platformOptions
     )
     .run(input: input, outputPipe: outputPipe, errorPipe: errorPipe) { execution, outputRead, errorRead in
-        let seq = AsyncBufferSequence(fileDescriptor: errorRead)
+        let seq = AsyncBufferSequence(fileDescriptor: errorRead!)
         return try await body(execution, seq)
     }
 }
@@ -241,8 +241,8 @@ public func run<Result, Input: InputProtocol>(
         platformOptions: platformOptions
     )
     .run(input: input, outputPipe: outputPipe, errorPipe: errorPipe)  { execution, outputRead, errorRead in
-        let outputSequence = AsyncBufferSequence(fileDescriptor: outputRead)
-        let errorSequence = AsyncBufferSequence(fileDescriptor: errorRead)
+        let outputSequence = AsyncBufferSequence(fileDescriptor: outputRead!)
+        let errorSequence = AsyncBufferSequence(fileDescriptor: errorRead!)
         return try await body(execution, outputSequence, errorSequence)
     }
 }

@@ -211,7 +211,7 @@ public struct Configuration: Sendable {
         outputPipe: consuming OutputPipeCreator,
         errorPipe: consuming OutputPipeCreator,
         isolation: isolated (any Actor)? = #isolation,
-        _ body: ((consuming Execution, consuming TrackedFileDescriptor, consuming TrackedFileDescriptor) async throws -> Result)
+        _ body: ((consuming Execution, consuming TrackedFileDescriptor?, consuming TrackedFileDescriptor?) async throws -> Result)
     ) async throws -> ExecutionResult<Result> {
 
         let inputPipe = try InputPipeCreator(input)
@@ -236,12 +236,17 @@ public struct Configuration: Sendable {
             let pid = execution.processIdentifier
             var fdBox: TrackedFileDescriptor?? = consume fd
             var executionBox : Execution? = consume execution
+            var outputReadBox: TrackedFileDescriptor?? = consume outputRead
+            var errorReadBox: TrackedFileDescriptor?? = consume errorRead
             return try await withThrowingTaskGroup(
                 of: TerminationStatus?.self,
                 returning: ExecutionResult.self
             ) { group in
                 let fdAgain = fdBox?.take()!
                 var fdBox2 : TrackedFileDescriptor?? = consume fdAgain
+                let outputRead = outputReadBox?.take()!
+                let errorRead = errorReadBox?.take()!
+
                 group.addTask {
                     let fd = fdBox2.take()!
                     if let fd {
@@ -259,7 +264,7 @@ public struct Configuration: Sendable {
 
                 // Body runs in the same isolation
                 let execution = executionBox.take()!
-                let result = try await body(execution, outputRead, outputWrite)
+                let result = try await body(execution, outputRead, errorRead)
                 var status: TerminationStatus? = nil
                 while let monitorResult = try await group.next() {
                     if let monitorResult = monitorResult {
@@ -284,7 +289,6 @@ public struct Configuration: Sendable {
         error: Error,
         isolation: isolated (any Actor)? = #isolation
     ) async throws -> CollectedResult<Output, Error> {
-        
         let inputPipe = try InputPipeCreator(input)
         let outputPipe = try OutputPipeCreator(output)
         let errorPipe = try OutputPipeCreator(error)
@@ -973,19 +977,19 @@ private func devNull() throws -> TrackedFileDescriptor? {
 internal struct InputPipeCreator : ~Copyable {
     let read: TrackedFileDescriptor?
     let write: TrackedFileDescriptor?
+        
+    /// A pipe, Customized for the `FileDescriptorInput` type.
+    init(_ i: FileDescriptorInput) throws {
+        read = TrackedFileDescriptor(i.fileDescriptor, closeWhenDone: i.closeAfterSpawningProcess)
+        write = nil
+    }
     
     /// A pipe, Customized for the `NoInput` type.
     init(_ i: NoInput) throws {
         read = try devNull()
         write = nil
     }
-    
-    /// A pipe, Customized for the `FileDescriptorInput` type.
-    init(_ i: FileDescriptorInput) throws {
-        read = try devNull()
-        write = nil
-    }
-    
+
     /// A pipe for any other input type.
     init<In: InputProtocol>(_ i: In) throws {
         let pipe = try FileDescriptor.pipe()

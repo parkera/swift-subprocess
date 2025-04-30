@@ -148,18 +148,18 @@ public struct BytesOutput: OutputProtocol {
     }
 }
 
-/// A concrete `Output` type for subprocesses that redirects
-/// the child output to the `.standardOutput` (a sequence) or `.standardError`
-/// property of `Execution`. This output type is
-/// only applicable to the `run()` family that takes a custom closure.
-#if SubprocessSpan
-@available(SubprocessSpan, *)
-#endif
-public struct SequenceOutput: OutputProtocol {
-    public typealias OutputType = Void
-
-    internal init() {}
-}
+///// A concrete `Output` type for subprocesses that redirects
+///// the child output to the `.standardOutput` (a sequence) or `.standardError`
+///// property of `Execution`. This output type is
+///// only applicable to the `run()` family that takes a custom closure.
+//#if SubprocessSpan
+//@available(SubprocessSpan, *)
+//#endif
+//public struct SequenceOutput: OutputProtocol {
+//    public typealias OutputType = Void
+//
+//    internal init() {}
+//}
 
 #if SubprocessSpan
 @available(SubprocessSpan, *)
@@ -223,16 +223,16 @@ extension OutputProtocol where Self == BytesOutput {
     }
 }
 
-#if SubprocessSpan
-@available(SubprocessSpan, *)
-#endif
-extension OutputProtocol where Self == SequenceOutput {
-    /// Create a `Subprocess` output that redirects the output
-    /// to the `.standardOutput` (or `.standardError`) property
-    /// of `Execution` as `AsyncSequence<Data>`.
-    public static var sequence: Self { .init() }
-}
-
+//#if SubprocessSpan
+//@available(SubprocessSpan, *)
+//#endif
+//extension OutputProtocol where Self == SequenceOutput {
+//    /// Create a `Subprocess` output that redirects the output
+//    /// to the `.standardOutput` (or `.standardError`) property
+//    /// of `Execution` as `AsyncSequence<Data>`.
+//    public static var sequence: Self { .init() }
+//}
+//
 // MARK: - Span Default Implementations
 #if SubprocessSpan
 @available(SubprocessSpan, *)

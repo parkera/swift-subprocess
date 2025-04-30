@@ -396,6 +396,7 @@ extension Configuration {
         // Close the file descriptors manually, so we can attempt to catch any errors
         try inputRead?.safelyClose()
         try errorWrite?.safelyClose()
+        try outputWrite?.safelyClose()
         
         if let execution {
             return execution

@@ -24,7 +24,13 @@ internal import Dispatch
 @available(SubprocessSpan, *)
 extension Data {
     init(_ s: borrowing RawSpan) {
-        self = s.withUnsafeBytes { Data($0) }
+        self = s.withUnsafeBytes {
+            if $0.isEmpty {
+                Data()
+            } else {
+                Data($0)
+            }
+        }
     }
 
     public var bytes: RawSpan {

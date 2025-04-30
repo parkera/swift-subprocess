@@ -56,8 +56,8 @@ public struct NoInput: InputProtocol {
 /// automatically close the provided `FileDescriptor`
 /// after the subprocess is spawned.
 public struct FileDescriptorInput: InputProtocol {
-    private let fileDescriptor: FileDescriptor
-    private let closeAfterSpawningProcess: Bool
+    internal let fileDescriptor: FileDescriptor
+    internal let closeAfterSpawningProcess: Bool
     
     public func write(with writer: borrowing StandardInputWriter) async throws {
         // noop

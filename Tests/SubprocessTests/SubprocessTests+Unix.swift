@@ -848,6 +848,69 @@ extension SubprocessUnixTests {
         }
         #expect(result.terminationStatus == .exited(42))
     }
+    
+    @Test func testCanReliablyKillProcessesEvenWithSigmask() async throws {
+             guard #available(SubprocessSpan , *) else {
+                 return
+             }
+             let result = try await withThrowingTaskGroup(
+                 of: TerminationStatus?.self,
+                 returning: TerminationStatus.self
+             ) { group in
+                 group.addTask {
+                     return try await Subprocess.run(
+                         .path("/bin/sh"),
+                         arguments: ["-c", "trap 'echo no' TERM; while true; do sleep 1; done"],
+                     ).terminationStatus
+                 }
+                 group.addTask {
+                     try? await Task.sleep(nanoseconds: 100_000_000)
+                     return nil
+                 }
+                 while let result = try await group.next() {
+                     group.cancelAll()
+                     if let result = result {
+                         return result
+                     }
+                 }
+                 preconditionFailure("Task shold have returned a result")
+             }
+             #expect(result == .unhandledException(SIGKILL))
+         }
+    
+    @Test func testCancelProcessVeryEarlyOnStressTest() async throws {
+             guard #available(SubprocessSpan , *) else {
+                 return
+             }
+
+             for i in 0..<100 {
+                 let terminationStatus = try await withThrowingTaskGroup(
+                     of: TerminationStatus?.self,
+                     returning: TerminationStatus.self
+                 ) { group in
+                     group.addTask {
+                         return try await Subprocess.run(
+                             .path("/bin/sleep"),
+                             arguments: ["100000"]
+                         ).terminationStatus
+                     }
+                     group.addTask {
+                         let waitNS = UInt64.random(in: 0..<10_000_000)
+                         try? await Task.sleep(nanoseconds: waitNS)
+                         return nil
+                     }
+
+                     while let result = try await group.next() {
+                         group.cancelAll()
+                         if let result = result {
+                             return result
+                         }
+                     }
+                     preconditionFailure("this should be impossible, task should've returned a result")
+                 }
+                 #expect(terminationStatus == .unhandledException(SIGKILL), "iteration \(i)")
+             }
+         }
 }
 
 // MARK: - Misc
